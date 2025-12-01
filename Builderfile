@@ -19,13 +19,14 @@ target("core-rust") {
     };
 }
 
-// Static JavaScript client
-target("static") {
-    type: library;
-    language: javascript;
-    sources: ["./source/static/client.js"];
+// Playground (built from npm package)
+target("playground") {
+    type: application;
+    language: typescript;
+    sources: ["./distribution/npm/playground/main.ts"];
     
     config: {
-        "mode": "execute"
+        "mode": "vite",
+        "outdir": "./distribution/npm/playground/dist"
     };
 }

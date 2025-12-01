@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Iconoglott</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="panel editor-panel">
+    <div class="header">
+      <span class="logo">Iconoglott</span>
+      <div class="status-group">
+        <span class="error-count" id="errorCount">0 errors</span>
+        <div class="status" id="status"></div>
+      </div>
+    </div>
+    <div class="editor-container">
+      <div class="line-numbers" id="lineNumbers"></div>
+      <div class="code-area">
+        <div class="highlight-layer" id="highlight"></div>
+        <textarea id="editor" spellcheck="false"></textarea>
+      </div>
+    </div>
+    <div class="error-panel" id="errorPanel"></div>
+    <div class="hint">
+      <span><code>canvas</code> <code>rect</code> <code>circle</code> <code>ellipse</code> <code>polygon</code> <code>path</code> <code>text</code> <code>line</code></span>
+      <span><code>fill</code> <code>stroke</code> <code>gradient</code> <code>shadow</code> <code>corner</code> <code>opacity</code></span>
+      <span><code>rotate</code> <code>scale</code> <code>translate</code></span>
+    </div>
+  </div>
+  <div class="panel canvas-panel">
+    <div class="header preview-header">
+      <h2>Preview</h2>
+    </div>
+    <div class="canvas-container">
+      <div id="canvas"></div>
+    </div>
+  </div>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>
+

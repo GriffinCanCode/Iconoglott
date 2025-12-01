@@ -66,3 +66,16 @@ wasm-dev:
 	@cp -r core/pkg ../distribution/npm/src/wasm
 	@echo "WASM built (dev) to distribution/npm/src/wasm"
 
+# Build playground
+playground:
+	@echo "Building playground..."
+	@cd ../distribution/npm && npm run build
+	@cd ../distribution/npm/playground && npm install && npm run build
+	@echo "Playground built to distribution/npm/playground/dist"
+
+# Full build (WASM + npm + playground)
+build-all: wasm
+	@cd ../distribution/npm && npm install && npm run build
+	@cd ../distribution/npm/playground && npm install && npm run build
+	@echo "Full build complete"
+

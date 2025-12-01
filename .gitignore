@@ -18,6 +18,10 @@ core/target/
 .pytest_cache/
 .coverage
 
+# Node
+node_modules/
+.hypothesis/
+
 # Misc
 .DS_Store
 *.log

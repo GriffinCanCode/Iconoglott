@@ -10,9 +10,10 @@ from lang import ErrorCode, ErrorInfo, Severity
 
 logger = logging.getLogger(__name__)
 
-# Resolve static dir relative to this file (works in dev and installed mode)
-STATIC_DIR = (Path(__file__).parent.parent / "static").resolve()
+# Resolve static dir - use playground build from npm package
+STATIC_DIR = (Path(__file__).parent.parent.parent / "distribution" / "npm" / "playground" / "dist").resolve()
 if not STATIC_DIR.exists():
+    # Fallback for installed mode
     import importlib.resources as pkg_resources
     STATIC_DIR = Path(str(pkg_resources.files("iconoglott"))) / "static"
 
@@ -47,19 +48,13 @@ def create_app() -> FastAPI:
             ErrorCode.EVAL_INVALID_SHAPE, "Internal server error", 500
         )
     
-    if STATIC_DIR.exists():
-        app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
-    @app.get("/")
-    async def index():
-        index_path = STATIC_DIR / "index.html"
-        if not index_path.exists():
-            raise HTTPException(status_code=404, detail="Index not found")
-        return FileResponse(index_path)
-    
     @app.get("/health")
     async def health():
         return {"status": "ok", "version": "0.1.0"}
+
+    # Mount static files at root (must be after other routes)
+    if STATIC_DIR.exists():
+        app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
     return app
 
