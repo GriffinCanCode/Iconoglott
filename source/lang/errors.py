@@ -35,6 +35,7 @@ class ErrorCode(IntEnum):
     PARSE_EXPECTED_STRING = 2010
     PARSE_MISSING_EQUALS = 2011
     PARSE_EMPTY_VALUE = 2012
+    PARSE_RECOVERY = 2013  # Parser recovered from error at sync point
     
     # Runtime/Eval Errors (3000-3099)
     EVAL_INVALID_SHAPE = 3001

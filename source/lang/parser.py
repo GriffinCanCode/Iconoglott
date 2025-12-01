@@ -1,4 +1,4 @@
-"""Parser for the visual DSL with error reporting."""
+"""Parser for the visual DSL with error reporting and recovery."""
 
 from typing import Iterator
 from .types import Token, TokenType, Node, Canvas, Shape, Style, Transform, ParseError
@@ -6,12 +6,15 @@ from .errors import ErrorCode, ErrorInfo, ErrorList
 
 
 class Parser:
-    """Parse token stream into AST with error collection."""
+    """Parse token stream into AST with error collection and recovery."""
 
     SHAPES = {'rect', 'circle', 'ellipse', 'line', 'path', 'polygon', 'text', 'image'}
     STYLE_PROPS = {'fill', 'stroke', 'opacity', 'corner', 'shadow', 'gradient', 'blur'}
     TEXT_PROPS = {'font', 'bold', 'italic', 'center', 'middle', 'end'}
     TRANSFORM_PROPS = {'translate', 'rotate', 'scale', 'origin'}
+    # Sync points for error recovery
+    SYNC_TYPES = {TokenType.NEWLINE, TokenType.DEDENT, TokenType.EOF}
+    STATEMENT_STARTERS = {'canvas', 'group', 'stack', 'row'} | SHAPES
 
     def __init__(self, tokens: Iterator[Token]):
         self.tokens = list(tokens)
@@ -19,6 +22,7 @@ class Parser:
         self.variables: dict[str, Token] = {}
         self.errors: list[ParseError] = []
         self.error_infos: ErrorList = []
+        self._panic_mode = False
 
     @property
     def current(self) -> Token | None:
@@ -37,12 +41,30 @@ class Parser:
         while self.current and self.current.type == TokenType.NEWLINE:
             self.advance()
 
+    def _synchronize(self):
+        """Advance to next synchronization point (newline, dedent, or statement start)."""
+        self._panic_mode = False
+        while self.current and self.current.type != TokenType.EOF:
+            # Stop at newline/dedent boundaries
+            if self.current.type in self.SYNC_TYPES:
+                if self.current.type == TokenType.NEWLINE:
+                    self.advance()
+                    self.skip_newlines()
+                return
+            # Stop at statement starters
+            if (self.current.type == TokenType.IDENT and 
+                self.current.value in self.STATEMENT_STARTERS):
+                return
+            if self.current.type == TokenType.VAR:
+                return
+            self.advance()
+
     def resolve(self, tok: Token):
         """Resolve variable references."""
         if tok.type == TokenType.VAR:
             if tok.value in self.variables:
                 return self.variables[tok.value].value
-            self._error(ErrorCode.PARSE_UNDEFINED_VAR, f"Undefined variable: {tok.value}", tok)
+            self._error(ErrorCode.PARSE_UNDEFINED_VAR, f"Undefined variable: {tok.value}", tok, enter_panic=False)
             return tok.value
         return tok.value
 
@@ -50,12 +72,14 @@ class Parser:
         """Record a parse error. Legacy method for backward compatibility."""
         self._error(ErrorCode.PARSE_UNEXPECTED_TOKEN, msg, tok)
 
-    def _error(self, code: ErrorCode, msg: str, tok: Token | None = None):
-        """Record a typed parse error."""
+    def _error(self, code: ErrorCode, msg: str, tok: Token | None = None, *, enter_panic: bool = True):
+        """Record a typed parse error and optionally enter panic mode."""
         t = tok or self.current
         line, col = (t.line, t.col) if t else (0, 0)
         self.errors.append(ParseError(msg, line, col, code))
         self.error_infos.append(ErrorInfo(code, msg, line, col))
+        if enter_panic:
+            self._panic_mode = True
 
     def expect(self, ttype: TokenType, msg: str, code: ErrorCode = ErrorCode.PARSE_EXPECTED_VALUE) -> Token | None:
         """Expect a token type, record error if not found."""
@@ -65,19 +89,28 @@ class Parser:
         return None
 
     def parse(self) -> Node:
-        """Parse into a scene AST."""
+        """Parse into a scene AST with error recovery, producing partial AST."""
         root = Node("scene")
         self.skip_newlines()
 
         while self.current and self.current.type != TokenType.EOF:
-            if node := self._parse_statement():
-                root.children.append(node)
-            self.skip_newlines()
+            try:
+                if node := self._parse_statement():
+                    root.children.append(node)
+            except Exception as e:
+                # Catch unexpected errors and recover
+                self._error(ErrorCode.PARSE_RECOVERY, f"Parser error: {e}", enter_panic=True)
+            
+            # If in panic mode, synchronize to next statement
+            if self._panic_mode:
+                self._synchronize()
+            else:
+                self.skip_newlines()
 
         return root
 
     def _parse_statement(self) -> Node | None:
-        """Parse a top-level statement."""
+        """Parse a top-level statement with error recovery."""
         if not self.current:
             return None
 
@@ -87,8 +120,7 @@ class Parser:
 
         if self.current.type != TokenType.IDENT:
             self._error(ErrorCode.PARSE_UNEXPECTED_TOKEN, f"Expected command, got {self.current.type.name}")
-            self.advance()
-            return None
+            return None  # Panic mode set, will synchronize in parse()
 
         cmd = self.current.value
         self.advance()
@@ -104,7 +136,7 @@ class Parser:
                 return self._parse_shape(cmd)
             case _:
                 self._error(ErrorCode.PARSE_UNKNOWN_COMMAND, f"Unknown command: {cmd}")
-                return None
+                return None  # Panic mode set, will synchronize in parse()
 
     def _parse_variable(self) -> Node:
         """Parse variable assignment."""
@@ -112,13 +144,13 @@ class Parser:
         name = name_tok.value
         if self.current and self.current.type == TokenType.EQUALS:
             self.advance()
-            if self.current:
+            if self.current and self.current.type not in self.SYNC_TYPES:
                 self.variables[name] = self.current
                 self.advance()
             else:
-                self._error(ErrorCode.PARSE_EMPTY_VALUE, "Expected value after '='", name_tok)
+                self._error(ErrorCode.PARSE_EMPTY_VALUE, "Expected value after '='", name_tok, enter_panic=False)
         else:
-            self._error(ErrorCode.PARSE_MISSING_EQUALS, "Expected '=' in variable assignment", name_tok)
+            self._error(ErrorCode.PARSE_MISSING_EQUALS, "Expected '=' in variable assignment", name_tok, enter_panic=False)
         return Node("variable", {"name": name, "value": self.variables.get(name)})
 
     def _parse_canvas(self) -> Node:
@@ -243,7 +275,7 @@ class Parser:
         """Parse polygon points: [x,y x,y x,y]"""
         points = []
         self.advance()  # consume [
-        while self.current and self.current.type != TokenType.RBRACKET:
+        while self.current and self.current.type not in {TokenType.RBRACKET, TokenType.NEWLINE, TokenType.EOF}:
             if self.current.type == TokenType.PAIR:
                 points.append(self.advance().value)
             else:
@@ -251,47 +283,58 @@ class Parser:
         if self.current and self.current.type == TokenType.RBRACKET:
             self.advance()
         else:
-            self._error(ErrorCode.PARSE_MISSING_BRACKET, "Expected ']' to close points list")
+            self._error(ErrorCode.PARSE_MISSING_BRACKET, "Expected ']' to close points list", enter_panic=False)
         return points
 
     def _parse_block(self, shape: Shape) -> Shape:
-        """Parse indented block of style/transform/children."""
+        """Parse indented block of style/transform/children with error recovery."""
         while self.current and self.current.type != TokenType.DEDENT:
             self.skip_newlines()
             if not self.current or self.current.type == TokenType.DEDENT:
                 break
 
-            if self.current.type == TokenType.IDENT:
-                prop = self.current.value
-                
-                if prop in self.SHAPES:
-                    if child := self._parse_statement():
-                        shape.children.append(child.value)
-                elif prop in self.STYLE_PROPS:
-                    self._parse_style_prop(shape.style)
-                elif prop in self.TEXT_PROPS:
-                    self._parse_text_prop(shape.style)
-                elif prop in self.TRANSFORM_PROPS:
-                    self._parse_transform_prop(shape.transform)
-                elif prop == "width" and self.peek_next and self.peek_next.type == TokenType.NUMBER:
-                    self.advance()
-                    shape.style.stroke_width = self.advance().value
-                elif prop == "d" and self.peek_next and self.peek_next.type == TokenType.STRING:
-                    # path d command in block
-                    self.advance()
-                    shape.props["d"] = self.advance().value
-                elif prop == "points" and self.peek_next and self.peek_next.type == TokenType.LBRACKET:
-                    self.advance()
-                    shape.props["points"] = self._parse_points()
+            try:
+                if self.current.type == TokenType.IDENT:
+                    prop = self.current.value
+                    
+                    if prop in self.SHAPES:
+                        if child := self._parse_statement():
+                            shape.children.append(child.value)
+                        if self._panic_mode:
+                            self._sync_to_block_boundary()
+                    elif prop in self.STYLE_PROPS:
+                        self._parse_style_prop(shape.style)
+                    elif prop in self.TEXT_PROPS:
+                        self._parse_text_prop(shape.style)
+                    elif prop in self.TRANSFORM_PROPS:
+                        self._parse_transform_prop(shape.transform)
+                    elif prop == "width" and self.peek_next and self.peek_next.type == TokenType.NUMBER:
+                        self.advance()
+                        shape.style.stroke_width = self.advance().value
+                    elif prop == "d" and self.peek_next and self.peek_next.type == TokenType.STRING:
+                        self.advance()
+                        shape.props["d"] = self.advance().value
+                    elif prop == "points" and self.peek_next and self.peek_next.type == TokenType.LBRACKET:
+                        self.advance()
+                        shape.props["points"] = self._parse_points()
+                    else:
+                        self.advance()
                 else:
                     self.advance()
-            else:
-                self.advance()
+            except Exception as e:
+                self._error(ErrorCode.PARSE_RECOVERY, f"Block parse error: {e}", enter_panic=True)
+                self._sync_to_block_boundary()
 
         if self.current and self.current.type == TokenType.DEDENT:
             self.advance()
 
         return shape
+
+    def _sync_to_block_boundary(self):
+        """Synchronize within a block (stop at newline or dedent)."""
+        self._panic_mode = False
+        while self.current and self.current.type not in {TokenType.NEWLINE, TokenType.DEDENT, TokenType.EOF}:
+            self.advance()
 
     def _parse_style_prop(self, style: Style):
         """Parse a style property."""
@@ -302,12 +345,12 @@ class Parser:
                 if self.current and self.current.type in (TokenType.COLOR, TokenType.VAR, TokenType.IDENT):
                     style.fill = self.resolve(self.advance())
                 else:
-                    self._error(ErrorCode.PARSE_EXPECTED_COLOR, "Expected color value after 'fill'")
+                    self._error(ErrorCode.PARSE_EXPECTED_COLOR, "Expected color after 'fill'", enter_panic=False)
             case "stroke":
                 if self.current and self.current.type in (TokenType.COLOR, TokenType.VAR):
                     style.stroke = self.resolve(self.advance())
                 else:
-                    self._error(ErrorCode.PARSE_EXPECTED_COLOR, "Expected color value after 'stroke'")
+                    self._error(ErrorCode.PARSE_EXPECTED_COLOR, "Expected color after 'stroke'", enter_panic=False)
                 if self.current and self.current.type == TokenType.NUMBER:
                     style.stroke_width = self.advance().value
                 if self.current and self.current.type == TokenType.IDENT and self.current.value == "width":
@@ -318,12 +361,12 @@ class Parser:
                 if self.current and self.current.type == TokenType.NUMBER:
                     style.opacity = self.advance().value
                 else:
-                    self._error(ErrorCode.PARSE_EXPECTED_NUMBER, "Expected number after 'opacity'")
+                    self._error(ErrorCode.PARSE_EXPECTED_NUMBER, "Expected number after 'opacity'", enter_panic=False)
             case "corner":
                 if self.current and self.current.type == TokenType.NUMBER:
                     style.corner = self.advance().value
                 else:
-                    self._error(ErrorCode.PARSE_EXPECTED_NUMBER, "Expected number after 'corner'")
+                    self._error(ErrorCode.PARSE_EXPECTED_NUMBER, "Expected number after 'corner'", enter_panic=False)
             case "shadow":
                 style.shadow = self._parse_shadow()
             case "gradient":
@@ -357,12 +400,12 @@ class Parser:
                 if self.current and self.current.type == TokenType.PAIR:
                     transform.translate = self.advance().value
                 else:
-                    self._error(ErrorCode.PARSE_EXPECTED_PAIR, "Expected pair (x,y) after 'translate'")
+                    self._error(ErrorCode.PARSE_EXPECTED_PAIR, "Expected (x,y) after 'translate'", enter_panic=False)
             case "rotate":
                 if self.current and self.current.type == TokenType.NUMBER:
                     transform.rotate = self.advance().value
                 else:
-                    self._error(ErrorCode.PARSE_EXPECTED_NUMBER, "Expected number after 'rotate'")
+                    self._error(ErrorCode.PARSE_EXPECTED_NUMBER, "Expected number after 'rotate'", enter_panic=False)
             case "scale":
                 if self.current and self.current.type == TokenType.PAIR:
                     transform.scale = self.advance().value
@@ -370,12 +413,12 @@ class Parser:
                     s = self.advance().value
                     transform.scale = (s, s)
                 else:
-                    self._error(ErrorCode.PARSE_EXPECTED_VALUE, "Expected number or pair after 'scale'")
+                    self._error(ErrorCode.PARSE_EXPECTED_VALUE, "Expected number or pair after 'scale'", enter_panic=False)
             case "origin":
                 if self.current and self.current.type == TokenType.PAIR:
                     transform.origin = self.advance().value
                 else:
-                    self._error(ErrorCode.PARSE_EXPECTED_PAIR, "Expected pair (x,y) after 'origin'")
+                    self._error(ErrorCode.PARSE_EXPECTED_PAIR, "Expected (x,y) after 'origin'", enter_panic=False)
 
     def _parse_shadow(self) -> dict:
         """Parse shadow: offset blur color."""
