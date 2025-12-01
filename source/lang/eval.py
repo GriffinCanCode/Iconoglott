@@ -1,11 +1,10 @@
-"""Interpreter for the visual DSL with Rust core rendering."""
+"""Interpreter for the visual DSL using Rust core for lexing, parsing, and rendering."""
 
+import json
 import logging
 from dataclasses import dataclass, field
-from .types import Node, Canvas, Shape, Style, Transform, ParseError
-from .lexer import Lexer
-from .parser import Parser
-from .errors import ErrorCode, ErrorInfo, ErrorList, Severity, RenderError
+from .types import Node, Canvas, Shape, Style, Transform
+from .errors import ErrorCode, ErrorInfo, ErrorList, RenderError
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +17,10 @@ except ImportError as e:
         "Build it with: cd source/core && maturin develop --release"
     ) from e
 
-if not hasattr(rust, 'Scene'):
-    raise ImportError("Rust core module is incomplete - missing Scene class")
+# Validate Rust core exports
+for attr in ['Lexer', 'Parser', 'Scene']:
+    if not hasattr(rust, attr):
+        raise ImportError(f"Rust core module is incomplete - missing {attr} class")
 
 
 @dataclass(slots=True)
@@ -27,7 +28,7 @@ class SceneState:
     """Evaluated scene state."""
     canvas: Canvas = field(default_factory=Canvas)
     shapes: list[dict] = field(default_factory=list)
-    errors: list[ParseError] = field(default_factory=list)
+    errors: list = field(default_factory=list)
     error_infos: ErrorList = field(default_factory=list)
     _def_id: int = 0
     _gradients: list[tuple[str, dict]] = field(default_factory=list)
@@ -152,7 +153,6 @@ class SceneState:
         if shadow := style.get('shadow'):
             fid = self.next_id()
             self._filters.append((fid, {'kind': 'shadow', **shadow}))
-            # Note: filter reference is handled via style in Rust
         
         return rust.Style(
             fill=fill,
@@ -217,75 +217,115 @@ class SceneState:
 
 
 class Interpreter:
-    """Evaluate DSL AST into renderable state."""
+    """Evaluate DSL AST into renderable state using Rust core."""
 
     def __init__(self):
         self.state = SceneState()
 
     def eval(self, source: str) -> SceneState:
-        """Interpret source code and return scene state."""
+        """Interpret source code using Rust lexer/parser and return scene state."""
         self.state = SceneState()
         
-        # Tokenize
-        lexer = Lexer(source)
-        tokens = list(lexer.tokenize())
-        self.state.error_infos.extend(lexer.errors)
+        # Tokenize with Rust lexer
+        lexer = rust.Lexer(source)
+        tokens = lexer.py_tokenize()
         
-        # Parse
-        parser = Parser(iter(tokens))
-        ast = parser.parse()
-        self.state.errors = parser.errors
-        self.state.error_infos.extend(parser.error_infos)
+        # Parse with Rust parser
+        parser = rust.Parser(tokens)
+        ast_json = parser.parse_json()
         
-        # Evaluate
+        # Collect parse errors
+        for err in parser.get_errors():
+            self.state.add_error(
+                ErrorCode.PARSE_UNEXPECTED_TOKEN,
+                err.message,
+                err.line,
+                err.col
+            )
+        
+        # Convert JSON AST to Python structures and evaluate
         try:
-            self._eval_node(ast)
+            ast = json.loads(ast_json)
+            self._eval_ast(ast)
+        except json.JSONDecodeError as e:
+            logger.exception("Failed to parse AST JSON")
+            self.state.add_error(ErrorCode.PARSE_RECOVERY, f"AST parse error: {e}")
         except Exception as e:
             logger.exception("Evaluation failed")
             self.state.add_error(ErrorCode.EVAL_INVALID_SHAPE, f"Evaluation error: {e}")
         
         return self.state
 
-    def _eval_node(self, node: Node):
+    def _eval_ast(self, ast: dict):
         """Recursively evaluate AST nodes."""
-        match node.type:
-            case "scene":
-                for child in node.children:
-                    self._eval_node(child)
-            case "canvas":
-                self.state.canvas = node.value
-            case "variable":
-                pass  # Handled in parser
-            case "shape":
-                self._add_shape(node.value)
+        if 'Scene' in ast:
+            for child in ast['Scene']:
+                self._eval_ast(child)
+        elif 'Canvas' in ast:
+            c = ast['Canvas']
+            self.state.canvas = Canvas(c['width'], c['height'], c['fill'])
+        elif 'Shape' in ast:
+            self._add_shape(ast['Shape'])
+        elif 'Variable' in ast:
+            pass  # Variables handled during parsing
 
-    def _add_shape(self, shape: Shape):
+    def _add_shape(self, shape: dict):
         """Add shape to scene state."""
         self.state.shapes.append(self._shape_to_dict(shape))
 
-    def _shape_to_dict(self, shape: Shape) -> dict:
-        """Convert Shape to dict for Rust rendering."""
+    def _unwrap_prop(self, val):
+        """Unwrap Rust PropValue enum format to plain Python values."""
+        if val is None:
+            return None
+        if isinstance(val, dict):
+            if 'Pair' in val:
+                return tuple(val['Pair'])
+            if 'Num' in val:
+                return val['Num']
+            if 'Str' in val:
+                return val['Str']
+            if 'Points' in val:
+                return [tuple(p) for p in val['Points']]
+            if 'None' in val:
+                return None
+        return val
+
+    def _unwrap_props(self, props: dict) -> dict:
+        """Unwrap all props from Rust PropValue format."""
+        return {k: self._unwrap_prop(v) for k, v in props.items()}
+
+    def _shape_to_dict(self, shape: dict) -> dict:
+        """Convert Rust AST Shape to dict for rendering."""
+        style = shape.get('style', {})
+        transform = shape.get('transform', {})
+        props = self._unwrap_props(shape.get('props', {}))
+        
+        # Get fill from style or props
+        fill = style.get('fill')
+        if not fill and 'fill' in props:
+            fill = props['fill']
+        
         return {
-            'kind': shape.kind,
-            'props': shape.props,
+            'kind': shape['kind'],
+            'props': props,
             'style': {
-                'fill': shape.style.fill or shape.props.get('fill'),
-                'stroke': shape.style.stroke,
-                'stroke_width': shape.style.stroke_width,
-                'opacity': shape.style.opacity,
-                'corner': shape.style.corner,
-                'font': shape.style.font,
-                'font_size': shape.style.font_size,
-                'font_weight': shape.style.font_weight,
-                'text_anchor': shape.style.text_anchor,
-                'shadow': shape.style.shadow,
-                'gradient': shape.style.gradient,
+                'fill': fill,
+                'stroke': style.get('stroke'),
+                'stroke_width': style.get('stroke_width', 1.0),
+                'opacity': style.get('opacity', 1.0),
+                'corner': style.get('corner', 0.0),
+                'font': style.get('font'),
+                'font_size': style.get('font_size', 16.0),
+                'font_weight': style.get('font_weight', 'normal'),
+                'text_anchor': style.get('text_anchor', 'start'),
+                'shadow': shape.get('shadow'),
+                'gradient': shape.get('gradient'),
             },
             'transform': {
-                'translate': shape.transform.translate,
-                'rotate': shape.transform.rotate,
-                'scale': shape.transform.scale,
-                'origin': shape.transform.origin,
+                'translate': transform.get('translate'),
+                'rotate': transform.get('rotate', 0.0),
+                'scale': transform.get('scale'),
+                'origin': transform.get('origin'),
             },
-            'children': [self._shape_to_dict(c) for c in shape.children],
+            'children': [self._shape_to_dict(c) for c in shape.get('children', [])],
         }

@@ -1,80 +1,95 @@
-"""Tests for DSL interpreter."""
+"""Tests for DSL interpreter using Rust core."""
 
 import pytest
-from lang.lexer import Lexer
-from lang.parser import Parser
+import iconoglott_core as rust
 from lang.eval import Interpreter
-from lang.types import TokenType
 
 
 class TestLexer:
+    """Test Rust lexer via Python bindings."""
+    
     def test_tokenize_canvas(self):
-        tokens = list(Lexer("canvas 800x600").tokenize())
-        assert tokens[0].type == TokenType.IDENT
+        lexer = rust.Lexer("canvas 800x600")
+        tokens = lexer.py_tokenize()
+        assert tokens[0].ttype == rust.TokenType.Ident
         assert tokens[0].value == "canvas"
-        assert tokens[1].type == TokenType.PAIR
-        assert tokens[1].value == (800, 600)
+        assert tokens[1].ttype == rust.TokenType.Pair
+        assert tokens[1].value == (800.0, 600.0)
 
     def test_tokenize_color(self):
-        tokens = list(Lexer("fill #ff0000").tokenize())
-        assert tokens[1].type == TokenType.COLOR
+        lexer = rust.Lexer("fill #ff0000")
+        tokens = lexer.py_tokenize()
+        assert tokens[1].ttype == rust.TokenType.Color
         assert tokens[1].value == "#ff0000"
 
     def test_tokenize_variable(self):
-        tokens = list(Lexer("$primary = #e94560").tokenize())
-        assert tokens[0].type == TokenType.VAR
+        lexer = rust.Lexer("$primary = #e94560")
+        tokens = lexer.py_tokenize()
+        assert tokens[0].ttype == rust.TokenType.Var
         assert tokens[0].value == "$primary"
-        assert tokens[1].type == TokenType.EQUALS
+        assert tokens[1].ttype == rust.TokenType.Equals
 
     def test_tokenize_pair(self):
-        tokens = list(Lexer("at 100,200").tokenize())
-        assert tokens[1].type == TokenType.PAIR
-        assert tokens[1].value == (100, 200)
+        lexer = rust.Lexer("at 100,200")
+        tokens = lexer.py_tokenize()
+        assert tokens[1].ttype == rust.TokenType.Pair
+        assert tokens[1].value == (100.0, 200.0)
 
     def test_tokenize_string(self):
-        tokens = list(Lexer('text "Hello World"').tokenize())
-        assert tokens[1].type == TokenType.STRING
+        lexer = rust.Lexer('text "Hello World"')
+        tokens = lexer.py_tokenize()
+        assert tokens[1].ttype == rust.TokenType.String
         assert tokens[1].value == "Hello World"
 
 
 class TestParser:
+    """Test Rust parser via Python bindings."""
+    
+    def _parse(self, source: str):
+        import json
+        lexer = rust.Lexer(source)
+        tokens = lexer.py_tokenize()
+        parser = rust.Parser(tokens)
+        return json.loads(parser.parse_json())
+    
     def test_parse_canvas(self):
-        tokens = Lexer("canvas 800x600 fill #000").tokenize()
-        ast = Parser(tokens).parse()
-        assert ast.children[0].type == "canvas"
-        assert ast.children[0].value.width == 800
-        assert ast.children[0].value.fill == "#000"
+        ast = self._parse("canvas 800x600 fill #000")
+        canvas = ast['Scene'][0]['Canvas']
+        assert canvas['width'] == 800
+        assert canvas['height'] == 600
+        assert canvas['fill'] == "#000"
 
     def test_parse_shape_at(self):
-        tokens = Lexer("rect at 100,200 size 50x30").tokenize()
-        ast = Parser(tokens).parse()
-        shape = ast.children[0].value
-        assert shape.kind == "rect"
-        assert shape.props["at"] == (100, 200)
-        assert shape.props["size"] == (50, 30)
+        ast = self._parse("rect at 100,200 size 50x30")
+        shape = ast['Scene'][0]['Shape']
+        assert shape['kind'] == "rect"
+        assert shape['props']['at']['Pair'] == [100.0, 200.0]
+        assert shape['props']['size']['Pair'] == [50.0, 30.0]
 
     def test_parse_variable(self):
-        tokens = Lexer("$color = #f00\nrect $color").tokenize()
-        ast = Parser(tokens).parse()
-        # Variable should be resolved in shape
-        shape = ast.children[1].value
-        assert shape.props.get("fill") == "#f00"
+        ast = self._parse("$color = #f00\nrect $color")
+        # Variable should be in first child
+        assert 'Variable' in ast['Scene'][0]
+        # Shape should have fill resolved
+        shape = ast['Scene'][1]['Shape']
+        assert shape['props']['fill']['Str'] == "#f00"
 
     def test_parse_nested_style(self):
         source = """rect at 10,10 size 100x50
   fill #e94560
   stroke #000 2
   corner 8"""
-        tokens = Lexer(source).tokenize()
-        ast = Parser(tokens).parse()
-        shape = ast.children[0].value
-        assert shape.style.fill == "#e94560"
-        assert shape.style.stroke == "#000"
-        assert shape.style.stroke_width == 2
-        assert shape.style.corner == 8
+        ast = self._parse(source)
+        shape = ast['Scene'][0]['Shape']
+        assert shape['style']['fill'] == "#e94560"
+        assert shape['style']['stroke'] == "#000"
+        assert shape['style']['stroke_width'] == 2.0
+        assert shape['style']['corner'] == 8.0
 
 
 class TestInterpreter:
+    """Test full evaluation pipeline."""
+    
     def test_eval_canvas(self):
         state = Interpreter().eval("canvas 400x300 fill #1a1a2e")
         assert state.canvas.width == 400
@@ -94,7 +109,7 @@ rect at 10,10 size 100x50
         source = "circle at 100,100 radius 50\n  fill #0f0"
         state = Interpreter().eval(source)
         assert state.shapes[0]['kind'] == 'circle'
-        assert state.shapes[0]['props']['radius'] == 50
+        assert state.shapes[0]['props']['radius'] == 50.0
 
     def test_to_svg_basic(self):
         source = "canvas 100x100\nrect at 0,0 size 50x50\n  fill #fff"
@@ -115,5 +130,6 @@ rect at 10,10 size 100x50
   rotate 45
   scale 1.5,1.5"""
         state = Interpreter().eval(source)
-        assert state.shapes[0]['transform']['rotate'] == 45
-        assert state.shapes[0]['transform']['scale'] == (1.5, 1.5)
+        assert state.shapes[0]['transform']['rotate'] == 45.0
+        scale = state.shapes[0]['transform']['scale']
+        assert list(scale) == [1.5, 1.5]

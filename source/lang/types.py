@@ -1,61 +1,34 @@
-"""Type definitions for the DSL."""
+"""Type definitions for the DSL - backward compatibility wrappers over Rust core.
+
+The Rust core (iconoglott_core) is the single source of truth.
+These types exist only for backward compatibility with existing Python code.
+"""
 
 from dataclasses import dataclass, field
-from enum import Enum, auto
 from typing import Union
 
-from .errors import ErrorInfo, ErrorCode, Severity
+# Re-export Rust types directly
+try:
+    from iconoglott_core import (
+        TokenType, Token,
+        AstStyle, AstTransform, AstCanvas, AstShape,
+        ShadowDef, GradientDef, ParseError as RustParseError,
+    )
+except ImportError:
+    # Fallback for when Rust core isn't built (e.g., during type checking)
+    TokenType = None  # type: ignore
+    Token = None  # type: ignore
+
+from .errors import ErrorInfo, ErrorCode
 
 
-class TokenType(Enum):
-    """Token types for lexical analysis."""
-    IDENT = auto()
-    NUMBER = auto()
-    STRING = auto()
-    COLOR = auto()
-    VAR = auto()
-    PAIR = auto()
-    COLON = auto()
-    EQUALS = auto()
-    ARROW = auto()
-    LBRACKET = auto()
-    RBRACKET = auto()
-    NEWLINE = auto()
-    INDENT = auto()
-    DEDENT = auto()
-    EOF = auto()
-    COMMENT = auto()
-
-
-@dataclass(frozen=True, slots=True)
-class Token:
-    """Lexical token."""
-    type: TokenType
-    value: Union[str, float, tuple]
-    line: int = 0
-    col: int = 0
-
-
-# Deprecated: Use ErrorInfo from errors.py instead
-# Kept for backward compatibility during migration
-@dataclass(slots=True)
-class ParseError:
-    """Syntax error with location. Deprecated: use ErrorInfo."""
-    message: str
-    line: int
-    col: int = 0
-    code: ErrorCode = ErrorCode.PARSE_UNEXPECTED_TOKEN
-    
-    def to_error_info(self) -> ErrorInfo:
-        return ErrorInfo(self.code, self.message, self.line, self.col)
-    
-    def __str__(self) -> str:
-        return f"E{self.code.value} Line {self.line + 1}: {self.message}"
-
+# ─────────────────────────────────────────────────────────────────────────────
+# Backward compatibility wrappers (thin layers over Rust types)
+# ─────────────────────────────────────────────────────────────────────────────
 
 @dataclass(slots=True)
 class Style:
-    """Shape styling properties."""
+    """Shape styling properties. Wraps Rust AstStyle."""
     fill: str | None = None
     stroke: str | None = None
     stroke_width: float = 1.0
@@ -71,7 +44,7 @@ class Style:
 
 @dataclass(slots=True)
 class Transform:
-    """Transform properties."""
+    """Transform properties. Wraps Rust AstTransform."""
     translate: tuple[float, float] | None = None
     rotate: float = 0.0
     scale: tuple[float, float] | None = None
@@ -80,7 +53,7 @@ class Transform:
 
 @dataclass(slots=True)
 class Canvas:
-    """Canvas definition."""
+    """Canvas definition. Wraps Rust AstCanvas."""
     width: int = 800
     height: int = 600
     fill: str = "#fff"
@@ -88,7 +61,7 @@ class Canvas:
 
 @dataclass(slots=True)
 class Shape:
-    """Generic shape with properties."""
+    """Generic shape with properties. Wraps Rust AstShape."""
     kind: str
     props: dict = field(default_factory=dict)
     style: Style = field(default_factory=Style)
@@ -98,7 +71,23 @@ class Shape:
 
 @dataclass(slots=True)
 class Node:
-    """AST node."""
+    """AST node for backward compatibility."""
     type: str
     value: Union[str, float, Canvas, Shape, dict, None] = None
     children: list["Node"] = field(default_factory=list)
+
+
+# Deprecated: Use ErrorInfo from errors.py instead
+@dataclass(slots=True)
+class ParseError:
+    """Syntax error with location. Deprecated: use ErrorInfo or Rust ParseError."""
+    message: str
+    line: int
+    col: int = 0
+    code: ErrorCode = ErrorCode.PARSE_UNEXPECTED_TOKEN
+    
+    def to_error_info(self) -> ErrorInfo:
+        return ErrorInfo(self.code, self.message, self.line, self.col)
+    
+    def __str__(self) -> str:
+        return f"E{self.code.value} Line {self.line + 1}: {self.message}"

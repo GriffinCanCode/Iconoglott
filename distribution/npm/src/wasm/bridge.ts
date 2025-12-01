@@ -1,12 +1,20 @@
 /**
  * WASM Bridge - Loads and wraps the Rust WASM module
  * 
- * Provides type-safe access to the Rust rendering engine while
- * falling back to TypeScript implementation when WASM isn't available.
+ * The Rust core is the SINGLE SOURCE OF TRUTH for:
+ * - DSL lexing and parsing
+ * - Shape rendering
+ * - Scene diffing
+ * - Content hashing
  */
 
 // WASM module types (mirrors wasm-bindgen exports)
 export interface WasmCore {
+  // DSL Processing (single source of truth)
+  tokenize(source: string): string;  // Returns JSON array of tokens
+  parse(source: string): string;  // Returns JSON AST
+  parse_with_errors(source: string): string;  // Returns {ast, errors} JSON
+  
   // Hashing
   fnv1a_hash(data: string): string;
   compute_element_id(order: number, kind: string, keyJson: string): string;

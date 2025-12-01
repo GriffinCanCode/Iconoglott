@@ -1,6 +1,7 @@
 //! Iconoglott Core - High-performance SVG rendering engine
 //!
 //! Features:
+//! - DSL lexer and parser (single source of truth)
 //! - Stable element IDs via content-addressed hashing
 //! - Incremental scene diffing with O(n) reconciliation
 //! - SVG fragment memoization for render caching
@@ -11,6 +12,8 @@
 
 // Core modules (always compiled)
 mod id;
+pub mod lexer;
+pub mod parser;
 
 // Python-specific modules (only with python feature)
 #[cfg(feature = "python")]
@@ -39,6 +42,18 @@ use pyo3::prelude::*;
 #[cfg(feature = "python")]
 #[pymodule]
 fn iconoglott_core(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    // Lexer & Parser (core DSL processing)
+    m.add_class::<lexer::TokenType>()?;
+    m.add_class::<lexer::Token>()?;
+    m.add_class::<lexer::Lexer>()?;
+    m.add_class::<parser::Parser>()?;
+    m.add_class::<parser::AstCanvas>()?;
+    m.add_class::<parser::AstShape>()?;
+    m.add_class::<parser::AstStyle>()?;
+    m.add_class::<parser::AstTransform>()?;
+    m.add_class::<parser::ShadowDef>()?;
+    m.add_class::<parser::GradientDef>()?;
+    m.add_class::<parser::ParseError>()?;
     // Scene & definitions
     m.add_class::<scene::Scene>()?;
     m.add_class::<scene::Gradient>()?;
@@ -68,6 +83,13 @@ fn iconoglott_core(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub use id::{ContentHash, ElementId, ElementKind, Fnv1a, IdGen};
+
+// Lexer & Parser (always available)
+pub use lexer::{Lexer, Token, TokenType, TokenValue};
+pub use parser::{
+    AstCanvas, AstNode, AstShape, AstStyle, AstTransform, 
+    GradientDef, ParseError, Parser, PropValue, ShadowDef,
+};
 
 #[cfg(feature = "python")]
 pub use diff::{DiffOp, DiffResult, IndexedScene};
