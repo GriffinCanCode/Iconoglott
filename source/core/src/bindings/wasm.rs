@@ -478,211 +478,8 @@ pub fn render_scene(size_name: &str, background: &str, defs: &str, elements_svg:
 
 #[wasm_bindgen]
 pub fn compute_path_bounds(d: &str) -> JsValue {
-    let bounds = parse_path_bounds(d);
+    let bounds = crate::path::parse_path_bounds(d);
     serde_wasm_bindgen::to_value(&[bounds.0, bounds.1, bounds.2, bounds.3]).unwrap_or(JsValue::NULL)
-}
-
-fn parse_path_bounds(d: &str) -> (f32, f32, f32, f32) {
-    let (mut min_x, mut min_y, mut max_x, mut max_y) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
-    let (mut cur_x, mut cur_y, mut start_x, mut start_y) = (0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32);
-    let (mut last_ctrl_x, mut last_ctrl_y) = (0.0_f32, 0.0_f32);
-    let mut last_cmd = ' ';
-
-    let mut track = |x: f32, y: f32| { min_x = min_x.min(x); min_y = min_y.min(y); max_x = max_x.max(x); max_y = max_y.max(y); };
-    let nums: Vec<f32> = extract_numbers(d);
-    let cmds: Vec<char> = d.chars().filter(|c| matches!(c, 'M'|'m'|'L'|'l'|'H'|'h'|'V'|'v'|'C'|'c'|'S'|'s'|'Q'|'q'|'T'|'t'|'A'|'a'|'Z'|'z')).collect();
-    let mut idx = 0;
-
-    for cmd in cmds {
-        match cmd {
-            'M' if idx + 1 < nums.len() => { cur_x = nums[idx]; cur_y = nums[idx + 1]; start_x = cur_x; start_y = cur_y; track(cur_x, cur_y); idx += 2; last_ctrl_x = cur_x; last_ctrl_y = cur_y; }
-            'm' if idx + 1 < nums.len() => { cur_x += nums[idx]; cur_y += nums[idx + 1]; start_x = cur_x; start_y = cur_y; track(cur_x, cur_y); idx += 2; last_ctrl_x = cur_x; last_ctrl_y = cur_y; }
-            'L' if idx + 1 < nums.len() => { cur_x = nums[idx]; cur_y = nums[idx + 1]; track(cur_x, cur_y); idx += 2; last_ctrl_x = cur_x; last_ctrl_y = cur_y; }
-            'l' if idx + 1 < nums.len() => { cur_x += nums[idx]; cur_y += nums[idx + 1]; track(cur_x, cur_y); idx += 2; last_ctrl_x = cur_x; last_ctrl_y = cur_y; }
-            'H' if idx < nums.len() => { cur_x = nums[idx]; track(cur_x, cur_y); idx += 1; last_ctrl_x = cur_x; last_ctrl_y = cur_y; }
-            'h' if idx < nums.len() => { cur_x += nums[idx]; track(cur_x, cur_y); idx += 1; last_ctrl_x = cur_x; last_ctrl_y = cur_y; }
-            'V' if idx < nums.len() => { cur_y = nums[idx]; track(cur_x, cur_y); idx += 1; last_ctrl_x = cur_x; last_ctrl_y = cur_y; }
-            'v' if idx < nums.len() => { cur_y += nums[idx]; track(cur_x, cur_y); idx += 1; last_ctrl_x = cur_x; last_ctrl_y = cur_y; }
-            'C' if idx + 5 < nums.len() => {
-                let (x0, y0) = (cur_x, cur_y);
-                let (x1, y1, x2, y2, x3, y3) = (nums[idx], nums[idx+1], nums[idx+2], nums[idx+3], nums[idx+4], nums[idx+5]);
-                cubic_bezier_bounds(x0, y0, x1, y1, x2, y2, x3, y3, &mut track);
-                cur_x = x3; cur_y = y3; last_ctrl_x = x2; last_ctrl_y = y2; idx += 6;
-            }
-            'c' if idx + 5 < nums.len() => {
-                let (x0, y0) = (cur_x, cur_y);
-                let (x1, y1, x2, y2, x3, y3) = (cur_x + nums[idx], cur_y + nums[idx+1], cur_x + nums[idx+2], cur_y + nums[idx+3], cur_x + nums[idx+4], cur_y + nums[idx+5]);
-                cubic_bezier_bounds(x0, y0, x1, y1, x2, y2, x3, y3, &mut track);
-                last_ctrl_x = x2; last_ctrl_y = y2; cur_x = x3; cur_y = y3; idx += 6;
-            }
-            'S' if idx + 3 < nums.len() => {
-                let (x0, y0) = (cur_x, cur_y);
-                let (x1, y1) = if matches!(last_cmd, 'C'|'c'|'S'|'s') { (2.0 * cur_x - last_ctrl_x, 2.0 * cur_y - last_ctrl_y) } else { (cur_x, cur_y) };
-                let (x2, y2, x3, y3) = (nums[idx], nums[idx+1], nums[idx+2], nums[idx+3]);
-                cubic_bezier_bounds(x0, y0, x1, y1, x2, y2, x3, y3, &mut track);
-                last_ctrl_x = x2; last_ctrl_y = y2; cur_x = x3; cur_y = y3; idx += 4;
-            }
-            's' if idx + 3 < nums.len() => {
-                let (x0, y0) = (cur_x, cur_y);
-                let (x1, y1) = if matches!(last_cmd, 'C'|'c'|'S'|'s') { (2.0 * cur_x - last_ctrl_x, 2.0 * cur_y - last_ctrl_y) } else { (cur_x, cur_y) };
-                let (x2, y2, x3, y3) = (cur_x + nums[idx], cur_y + nums[idx+1], cur_x + nums[idx+2], cur_y + nums[idx+3]);
-                cubic_bezier_bounds(x0, y0, x1, y1, x2, y2, x3, y3, &mut track);
-                last_ctrl_x = x2; last_ctrl_y = y2; cur_x = x3; cur_y = y3; idx += 4;
-            }
-            'Q' if idx + 3 < nums.len() => {
-                let (x0, y0) = (cur_x, cur_y);
-                let (x1, y1, x2, y2) = (nums[idx], nums[idx+1], nums[idx+2], nums[idx+3]);
-                quadratic_bezier_bounds(x0, y0, x1, y1, x2, y2, &mut track);
-                last_ctrl_x = x1; last_ctrl_y = y1; cur_x = x2; cur_y = y2; idx += 4;
-            }
-            'q' if idx + 3 < nums.len() => {
-                let (x0, y0) = (cur_x, cur_y);
-                let (x1, y1, x2, y2) = (cur_x + nums[idx], cur_y + nums[idx+1], cur_x + nums[idx+2], cur_y + nums[idx+3]);
-                quadratic_bezier_bounds(x0, y0, x1, y1, x2, y2, &mut track);
-                last_ctrl_x = x1; last_ctrl_y = y1; cur_x = x2; cur_y = y2; idx += 4;
-            }
-            'T' if idx + 1 < nums.len() => {
-                let (x0, y0) = (cur_x, cur_y);
-                let (x1, y1) = if matches!(last_cmd, 'Q'|'q'|'T'|'t') { (2.0 * cur_x - last_ctrl_x, 2.0 * cur_y - last_ctrl_y) } else { (cur_x, cur_y) };
-                let (x2, y2) = (nums[idx], nums[idx+1]);
-                quadratic_bezier_bounds(x0, y0, x1, y1, x2, y2, &mut track);
-                last_ctrl_x = x1; last_ctrl_y = y1; cur_x = x2; cur_y = y2; idx += 2;
-            }
-            't' if idx + 1 < nums.len() => {
-                let (x0, y0) = (cur_x, cur_y);
-                let (x1, y1) = if matches!(last_cmd, 'Q'|'q'|'T'|'t') { (2.0 * cur_x - last_ctrl_x, 2.0 * cur_y - last_ctrl_y) } else { (cur_x, cur_y) };
-                let (x2, y2) = (cur_x + nums[idx], cur_y + nums[idx+1]);
-                quadratic_bezier_bounds(x0, y0, x1, y1, x2, y2, &mut track);
-                last_ctrl_x = x1; last_ctrl_y = y1; cur_x = x2; cur_y = y2; idx += 2;
-            }
-            'A' if idx + 6 < nums.len() => {
-                let (rx, ry, phi, large_arc, sweep) = (nums[idx].abs(), nums[idx+1].abs(), nums[idx+2], nums[idx+3] != 0.0, nums[idx+4] != 0.0);
-                let (x2, y2) = (nums[idx+5], nums[idx+6]);
-                arc_bounds(cur_x, cur_y, rx, ry, phi, large_arc, sweep, x2, y2, &mut track);
-                cur_x = x2; cur_y = y2; last_ctrl_x = cur_x; last_ctrl_y = cur_y; idx += 7;
-            }
-            'a' if idx + 6 < nums.len() => {
-                let (rx, ry, phi, large_arc, sweep) = (nums[idx].abs(), nums[idx+1].abs(), nums[idx+2], nums[idx+3] != 0.0, nums[idx+4] != 0.0);
-                let (x2, y2) = (cur_x + nums[idx+5], cur_y + nums[idx+6]);
-                arc_bounds(cur_x, cur_y, rx, ry, phi, large_arc, sweep, x2, y2, &mut track);
-                cur_x = x2; cur_y = y2; last_ctrl_x = cur_x; last_ctrl_y = cur_y; idx += 7;
-            }
-            'Z' | 'z' => { cur_x = start_x; cur_y = start_y; last_ctrl_x = cur_x; last_ctrl_y = cur_y; }
-            _ => {}
-        }
-        last_cmd = cmd;
-    }
-    if min_x == f32::MAX { (0.0, 0.0, 0.0, 0.0) } else { (min_x, min_y, max_x - min_x, max_y - min_y) }
-}
-
-/// Compute cubic Bezier bounds by finding extrema
-fn cubic_bezier_bounds(x0: f32, y0: f32, x1: f32, y1: f32, x2: f32, y2: f32, x3: f32, y3: f32, track: &mut impl FnMut(f32, f32)) {
-    track(x0, y0); track(x3, y3);
-    for (p0, p1, p2, p3, is_x) in [(x0, x1, x2, x3, true), (y0, y1, y2, y3, false)] {
-        let a = -p0 + 3.0*p1 - 3.0*p2 + p3;
-        let b = 2.0*(p0 - 2.0*p1 + p2);
-        let c = -p0 + p1;
-        for t in solve_quadratic(a, b, c) {
-            if t > 0.0 && t < 1.0 {
-                let val = cubic_at(t, p0, p1, p2, p3);
-                if is_x { track(val, cubic_at(t, y0, y1, y2, y3)); }
-                else { track(cubic_at(t, x0, x1, x2, x3), val); }
-            }
-        }
-    }
-}
-
-/// Compute quadratic Bezier bounds by finding extrema
-fn quadratic_bezier_bounds(x0: f32, y0: f32, x1: f32, y1: f32, x2: f32, y2: f32, track: &mut impl FnMut(f32, f32)) {
-    track(x0, y0); track(x2, y2);
-    for (p0, p1, p2, is_x) in [(x0, x1, x2, true), (y0, y1, y2, false)] {
-        let denom = p0 - 2.0*p1 + p2;
-        if denom.abs() > 1e-10 {
-            let t = (p0 - p1) / denom;
-            if t > 0.0 && t < 1.0 {
-                let val = quadratic_at(t, p0, p1, p2);
-                if is_x { track(val, quadratic_at(t, y0, y1, y2)); }
-                else { track(quadratic_at(t, x0, x1, x2), val); }
-            }
-        }
-    }
-}
-
-/// Compute arc bounds using endpoint parameterization
-fn arc_bounds(x1: f32, y1: f32, mut rx: f32, mut ry: f32, phi_deg: f32, large_arc: bool, sweep: bool, x2: f32, y2: f32, track: &mut impl FnMut(f32, f32)) {
-    track(x1, y1); track(x2, y2);
-    if rx < 1e-10 || ry < 1e-10 { return; }
-    
-    let phi = phi_deg.to_radians();
-    let (cos_phi, sin_phi) = (phi.cos(), phi.sin());
-    let dx = (x1 - x2) / 2.0;
-    let dy = (y1 - y2) / 2.0;
-    let x1p = cos_phi * dx + sin_phi * dy;
-    let y1p = -sin_phi * dx + cos_phi * dy;
-    
-    let lambda = (x1p / rx).powi(2) + (y1p / ry).powi(2);
-    if lambda > 1.0 { let s = lambda.sqrt(); rx *= s; ry *= s; }
-    
-    let sq = ((rx*ry).powi(2) - (rx*y1p).powi(2) - (ry*x1p).powi(2)) / ((rx*y1p).powi(2) + (ry*x1p).powi(2));
-    let coef = if large_arc != sweep { sq.max(0.0).sqrt() } else { -sq.max(0.0).sqrt() };
-    let cxp = coef * rx * y1p / ry;
-    let cyp = -coef * ry * x1p / rx;
-    let cx = cos_phi * cxp - sin_phi * cyp + (x1 + x2) / 2.0;
-    let cy = sin_phi * cxp + cos_phi * cyp + (y1 + y2) / 2.0;
-    
-    let theta1 = ((y1p - cyp) / ry).atan2((x1p - cxp) / rx);
-    let mut dtheta = (((-y1p - cyp) / ry).atan2((-x1p - cxp) / rx) - theta1).rem_euclid(std::f32::consts::TAU);
-    if !sweep { dtheta -= std::f32::consts::TAU; }
-    
-    for angle in [0.0_f32, std::f32::consts::FRAC_PI_2, std::f32::consts::PI, 3.0 * std::f32::consts::FRAC_PI_2] {
-        let t = (angle - theta1).rem_euclid(std::f32::consts::TAU);
-        if (sweep && t <= dtheta) || (!sweep && t >= dtheta.abs() - std::f32::consts::TAU) || dtheta.abs() >= std::f32::consts::TAU - 1e-6 {
-            let px = cx + rx * angle.cos() * cos_phi - ry * angle.sin() * sin_phi;
-            let py = cy + rx * angle.cos() * sin_phi + ry * angle.sin() * cos_phi;
-            track(px, py);
-        }
-    }
-}
-
-#[inline] fn cubic_at(t: f32, p0: f32, p1: f32, p2: f32, p3: f32) -> f32 {
-    let mt = 1.0 - t;
-    mt*mt*mt*p0 + 3.0*mt*mt*t*p1 + 3.0*mt*t*t*p2 + t*t*t*p3
-}
-
-#[inline] fn quadratic_at(t: f32, p0: f32, p1: f32, p2: f32) -> f32 {
-    let mt = 1.0 - t;
-    mt*mt*p0 + 2.0*mt*t*p1 + t*t*p2
-}
-
-fn solve_quadratic(a: f32, b: f32, c: f32) -> Vec<f32> {
-    if a.abs() < 1e-10 { return if b.abs() < 1e-10 { vec![] } else { vec![-c / b] }; }
-    let disc = b*b - 4.0*a*c;
-    if disc < 0.0 { vec![] }
-    else if disc < 1e-10 { vec![-b / (2.0 * a)] }
-    else { let sq = disc.sqrt(); vec![(-b - sq) / (2.0 * a), (-b + sq) / (2.0 * a)] }
-}
-
-fn extract_numbers(d: &str) -> Vec<f32> {
-    let mut nums = Vec::new();
-    let mut buf = String::new();
-    
-    for c in d.chars() {
-        if c.is_ascii_digit() || c == '.' || (c == '-' && buf.is_empty()) || (c == '-' && buf.ends_with('e')) {
-            buf.push(c);
-        } else if c == 'e' || c == 'E' {
-            buf.push('e');
-        } else {
-            if !buf.is_empty() {
-                if let Ok(n) = buf.parse::<f32>() { nums.push(n); }
-                buf.clear();
-            }
-            if c == '-' { buf.push(c); }
-        }
-    }
-    if !buf.is_empty() {
-        if let Ok(n) = buf.parse::<f32>() { nums.push(n); }
-    }
-    nums
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -887,4 +684,374 @@ pub fn render_use(href: &str, x: f32, y: f32, width: JsValue, height: JsValue, s
     let tf = transform.map_or(String::new(), |t| format!(r#" transform="{}""#, t));
     format!("<use href=\"#{}\" x=\"{}\" y=\"{}\"{}{}{}/>" , 
         html_escape(href), x, y, size, style.to_svg_attrs(), tf)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests (native - no JsValue)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        fnv1a_hash, render_line, render_text, render_linear_gradient, render_radial_gradient,
+        render_shadow_filter, render_blur_filter, render_edge, render_arrow_markers, 
+        render_scene, WasmStyle, html_escape,
+    };
+    use crate::path::parse_path_bounds;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Hashing Tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_fnv1a_deterministic() {
+        let h1 = fnv1a_hash("hello");
+        let h2 = fnv1a_hash("hello");
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_fnv1a_different_inputs() {
+        let h1 = fnv1a_hash("rect");
+        let h2 = fnv1a_hash("circle");
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn test_fnv1a_empty_string() {
+        let h = fnv1a_hash("");
+        assert_eq!(h.len(), 16); // 64-bit hex = 16 chars
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Shape Rendering Tests (no JsValue)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_render_line() {
+        let svg = render_line(0.0, 0.0, 100.0, 100.0, "#000", 2.0, None);
+        assert!(svg.contains("<line"));
+        assert!(svg.contains("stroke=\"#000\""));
+        assert!(svg.contains("stroke-width=\"2\""));
+    }
+
+    #[test]
+    fn test_render_text() {
+        let svg = render_text(50.0, 50.0, "Hello", "Arial", 16.0, "bold", "middle", "#000", None);
+        assert!(svg.contains("<text"));
+        assert!(svg.contains("Hello"));
+        assert!(svg.contains(r#"font-family="Arial""#));
+        assert!(svg.contains(r#"font-size="16""#));
+    }
+
+    #[test]
+    fn test_render_text_escapes_html() {
+        let svg = render_text(0.0, 0.0, "<script>&", "Arial", 12.0, "normal", "start", "#000", None);
+        assert!(svg.contains("&lt;script&gt;&amp;"));
+        assert!(!svg.contains("<script>"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Gradient & Filter Tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_render_linear_gradient() {
+        let svg = render_linear_gradient("grad1", "#ff0000", "#0000ff", 90.0);
+        assert!(svg.contains("<linearGradient"));
+        assert!(svg.contains(r#"id="grad1""#));
+        assert!(svg.contains("#ff0000"));
+        assert!(svg.contains("#0000ff"));
+    }
+
+    #[test]
+    fn test_render_radial_gradient() {
+        let svg = render_radial_gradient("grad2", "#fff", "#000");
+        assert!(svg.contains("<radialGradient"));
+        assert!(svg.contains(r#"id="grad2""#));
+    }
+
+    #[test]
+    fn test_render_shadow_filter() {
+        let svg = render_shadow_filter("shadow1", 2.0, 2.0, 4.0, "#333");
+        assert!(svg.contains("<filter"));
+        assert!(svg.contains("<feDropShadow"));
+        assert!(svg.contains(r#"dx="2""#));
+    }
+
+    #[test]
+    fn test_render_blur_filter() {
+        let svg = render_blur_filter("blur1", 5.0);
+        assert!(svg.contains("<filter"));
+        assert!(svg.contains("<feGaussianBlur"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Path Bounds Tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_path_bounds_simple_rect() {
+        let bounds = parse_path_bounds("M10 10 L100 10 L100 100 L10 100 Z");
+        assert!((bounds.0 - 10.0).abs() < 0.1);  // min_x
+        assert!((bounds.1 - 10.0).abs() < 0.1);  // min_y
+        assert!((bounds.2 - 90.0).abs() < 0.1);  // width
+        assert!((bounds.3 - 90.0).abs() < 0.1);  // height
+    }
+
+    #[test]
+    fn test_path_bounds_relative() {
+        let bounds = parse_path_bounds("m0 0 l50 0 l0 50 l-50 0 z");
+        assert!((bounds.0).abs() < 0.1);
+        assert!((bounds.1).abs() < 0.1);
+        assert!((bounds.2 - 50.0).abs() < 0.1);
+        assert!((bounds.3 - 50.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_path_bounds_empty() {
+        let bounds = parse_path_bounds("");
+        assert_eq!(bounds, (0.0, 0.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn test_path_bounds_horizontal_vertical() {
+        let bounds = parse_path_bounds("M0 0 H100 V50");
+        assert!((bounds.2 - 100.0).abs() < 0.1);
+        assert!((bounds.3 - 50.0).abs() < 0.1);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Graph/Edge Tests (no JsValue)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_render_edge_straight() {
+        let svg = render_edge(0.0, 0.0, 100.0, 100.0, "straight", "none", None, "#333", 2.0);
+        assert!(svg.contains("<path"));
+        assert!(svg.contains("M0,0 L100,100"));
+    }
+
+    #[test]
+    fn test_render_edge_curved() {
+        let svg = render_edge(0.0, 0.0, 100.0, 0.0, "curved", "forward", None, "#333", 2.0);
+        assert!(svg.contains("C"));  // Bezier curve command
+        assert!(svg.contains("marker-end"));
+    }
+
+    #[test]
+    fn test_render_edge_orthogonal() {
+        let svg = render_edge(0.0, 0.0, 100.0, 100.0, "orthogonal", "both", Some("->".into()), "#333", 2.0);
+        assert!(svg.contains("marker-start"));
+        assert!(svg.contains("marker-end"));
+    }
+
+    #[test]
+    fn test_render_arrow_markers() {
+        let svg = render_arrow_markers("#333");
+        assert!(svg.contains("<marker"));
+        assert!(svg.contains(r#"id="arrow-start""#));
+        assert!(svg.contains(r#"id="arrow-end""#));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Scene Rendering Tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_render_scene() {
+        let svg = render_scene("medium", "#fff", "", "<rect x=\"0\" y=\"0\" width=\"10\" height=\"10\"/>");
+        assert!(svg.contains("<svg"));
+        assert!(svg.contains("width=\"64\""));  // medium = 64
+        assert!(svg.contains("height=\"64\""));
+        assert!(svg.contains("fill=\"#fff\""));
+        assert!(svg.contains("<rect"));
+    }
+
+    #[test]
+    fn test_render_scene_with_defs() {
+        let svg = render_scene("small", "#000", "<linearGradient id=\"g1\"/>", "");
+        assert!(svg.contains("<defs>"));
+        assert!(svg.contains("<linearGradient"));
+        assert!(svg.contains("</defs>"));
+    }
+
+    #[test]
+    fn test_render_scene_invalid_size_fallback() {
+        let svg = render_scene("invalid", "#fff", "", "");
+        assert!(svg.contains("width=\"64\""));  // Falls back to 64x64
+    }
+
+    #[test]
+    fn test_render_scene_all_sizes() {
+        for (name, expected) in [("nano", 16), ("micro", 24), ("tiny", 32), ("small", 48),
+                                   ("medium", 64), ("large", 96), ("xlarge", 128), 
+                                   ("huge", 192), ("massive", 256), ("giant", 512)] {
+            let svg = render_scene(name, "#fff", "", "");
+            assert!(svg.contains(&format!("width=\"{}\"", expected)), "Failed for size {}", name);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Style Tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_wasm_style_default() {
+        let style = WasmStyle::default();
+        assert!(style.fill.is_none());
+        assert!(style.stroke.is_none());
+        assert!((style.opacity - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_wasm_style_to_svg_attrs() {
+        let style = WasmStyle {
+            fill: Some("#ff0".into()),
+            stroke: Some("#000".into()),
+            stroke_width: 2.0,
+            opacity: 0.5,
+            corner: 0.0,
+            filter: None,
+        };
+        let attrs = style.to_svg_attrs();
+        assert!(attrs.contains("fill=\"#ff0\""));
+        assert!(attrs.contains("stroke=\"#000\""));
+        assert!(attrs.contains("stroke-width=\"2\""));
+        assert!(attrs.contains("opacity=\"0.5\""));
+    }
+
+    #[test]
+    fn test_wasm_style_with_filter() {
+        let style = WasmStyle {
+            fill: None,
+            stroke: None,
+            stroke_width: 0.0,
+            opacity: 1.0,
+            corner: 0.0,
+            filter: Some("shadow1".into()),
+        };
+        let attrs = style.to_svg_attrs();
+        assert!(attrs.contains("filter=\"url(#shadow1)\""));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // HTML Escape Tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_html_escape() {
+        assert_eq!(html_escape("&"), "&amp;");
+        assert_eq!(html_escape("<"), "&lt;");
+        assert_eq!(html_escape(">"), "&gt;");
+        assert_eq!(html_escape("\""), "&quot;");
+        assert_eq!(html_escape("<a href=\"x\">"), "&lt;a href=&quot;x&quot;&gt;");
+    }
+
+    #[test]
+    fn test_html_escape_combined() {
+        assert_eq!(html_escape("<script>alert('&')</script>"), "&lt;script&gt;alert('&amp;')&lt;/script&gt;");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Bezier/Arc Calculation Tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_cubic_at_endpoints() {
+        assert!((cubic_at(0.0, 0.0, 10.0, 20.0, 30.0) - 0.0).abs() < 0.001);
+        assert!((cubic_at(1.0, 0.0, 10.0, 20.0, 30.0) - 30.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_cubic_at_midpoint() {
+        // Simple line: (0, 0, 0, 0) -> t=0.5 should be 0
+        assert!((cubic_at(0.5, 0.0, 0.0, 0.0, 0.0) - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_quadratic_at_endpoints() {
+        assert!((quadratic_at(0.0, 0.0, 50.0, 100.0) - 0.0).abs() < 0.001);
+        assert!((quadratic_at(1.0, 0.0, 50.0, 100.0) - 100.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_solve_quadratic_no_roots() {
+        let roots = solve_quadratic(1.0, 0.0, 1.0);  // x² + 1 = 0
+        assert!(roots.is_empty());
+    }
+
+    #[test]
+    fn test_solve_quadratic_one_root() {
+        let roots = solve_quadratic(1.0, -2.0, 1.0);  // x² - 2x + 1 = 0 -> (x-1)² = 0
+        assert_eq!(roots.len(), 1);
+        assert!((roots[0] - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_solve_quadratic_two_roots() {
+        let roots = solve_quadratic(1.0, 0.0, -1.0);  // x² - 1 = 0
+        assert_eq!(roots.len(), 2);
+        assert!(roots.iter().any(|&r| (r - 1.0).abs() < 0.001));
+        assert!(roots.iter().any(|&r| (r + 1.0).abs() < 0.001));
+    }
+
+    #[test]
+    fn test_solve_quadratic_linear() {
+        let roots = solve_quadratic(0.0, 2.0, -4.0);  // 2x - 4 = 0 -> x = 2
+        assert_eq!(roots.len(), 1);
+        assert!((roots[0] - 2.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_extract_numbers() {
+        let nums = extract_numbers("M10 20 L30.5 -40");
+        assert_eq!(nums.len(), 4);
+        assert!((nums[0] - 10.0).abs() < 0.001);
+        assert!((nums[1] - 20.0).abs() < 0.001);
+        assert!((nums[2] - 30.5).abs() < 0.001);
+        assert!((nums[3] + 40.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_extract_numbers_scientific() {
+        let nums = extract_numbers("1e2 2.5e-1");
+        assert!((nums[0] - 100.0).abs() < 0.001);
+        assert!((nums[1] - 0.25).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_extract_numbers_comma_separated() {
+        let nums = extract_numbers("10,20,30");
+        assert_eq!(nums.len(), 3);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Path Bounds - Complex Cases
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_path_bounds_cubic_bezier() {
+        // Cubic curve that goes beyond endpoints
+        let bounds = parse_path_bounds("M0 50 C0 0, 100 0, 100 50");
+        assert!(bounds.1 < 50.0); // Should have min_y above the endpoints
+    }
+
+    #[test]
+    fn test_path_bounds_quadratic_bezier() {
+        let bounds = parse_path_bounds("M0 0 Q50 100, 100 0");
+        assert!(bounds.3 > 0.0); // Height should account for control point influence
+    }
+
+    #[test]
+    fn test_path_bounds_arc() {
+        let bounds = parse_path_bounds("M0 50 A50 50 0 0 1 100 50");
+        assert!(bounds.2 >= 100.0); // Width should be at least 100
+    }
+
+    #[test]
+    fn test_path_bounds_smooth_cubic() {
+        let bounds = parse_path_bounds("M0 0 C10 20 20 20 30 0 S50 -20 60 0");
+        assert!(bounds.3 > 0.0); // Should have height from curves
+    }
 }

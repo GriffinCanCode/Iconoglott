@@ -15,6 +15,7 @@
 mod hash;
 mod dsl;
 pub mod font;
+pub mod path;
 
 // Scene/rendering modules (python or bench feature)
 #[cfg(any(feature = "python", feature = "bench"))]
