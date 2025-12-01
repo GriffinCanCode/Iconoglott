@@ -17,3 +17,10 @@ export {
   type DiffResult,
 } from './diff';
 
+// Text metrics (WASM-accelerated)
+export {
+  measureTextWasm,
+  computeTextBoundsWasm,
+  type TextMetrics,
+} from './wasm-renderer';
+

@@ -42,6 +42,10 @@ export interface WasmCore {
   
   // Path utilities
   compute_path_bounds(d: string): string;
+  
+  // Text metrics
+  measure_text(content: string, font: string, size: number): string;
+  compute_text_bounds(x: number, y: number, content: string, font: string, size: number, anchor: string): string;
 }
 
 let wasmModule: WasmCore | null = null;

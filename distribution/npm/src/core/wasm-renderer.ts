@@ -228,6 +228,40 @@ export function hashContentWasm(wasm: WasmCore, content: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Text Metrics (WASM-accelerated)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface TextMetrics {
+  width: number;
+  height: number;
+  ascender: number;
+  descender: number;
+}
+
+/**
+ * Measure text dimensions using bundled font metrics
+ */
+export function measureTextWasm(wasm: WasmCore, content: string, font: string, size: number): TextMetrics {
+  return JSON.parse(wasm.measure_text(content, font, size)) as TextMetrics;
+}
+
+/**
+ * Compute text bounding box accounting for anchor position
+ * Returns [x, y, width, height]
+ */
+export function computeTextBoundsWasm(
+  wasm: WasmCore,
+  x: number,
+  y: number,
+  content: string,
+  font: string,
+  size: number,
+  anchor: string
+): [number, number, number, number] {
+  return JSON.parse(wasm.compute_text_bounds(x, y, content, font, size, anchor)) as [number, number, number, number];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Full Scene Rendering
 // ─────────────────────────────────────────────────────────────────────────────
 

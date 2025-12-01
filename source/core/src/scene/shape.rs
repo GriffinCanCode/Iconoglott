@@ -309,7 +309,22 @@ impl Text {
         format!(r#"<text x="{}" y="{}" font-family="{}" font-size="{}" font-weight="{}" text-anchor="{}" fill="{}"{}>{}</text>"#,
             self.x, self.y, self.font, self.size, self.weight, self.anchor, fill, transform_attr(&self.transform), html_escape(&self.content))
     }
-    pub fn bounds(&self) -> (f32, f32, f32, f32) { (self.x, self.y - self.size, self.content.len() as f32 * self.size * 0.6, self.size * 1.2) }
+    
+    /// Compute bounding box using font metrics
+    pub fn bounds(&self) -> (f32, f32, f32, f32) {
+        let metrics = crate::font::measure_text(&self.content, &self.font, self.size);
+        let x = match self.anchor.as_str() {
+            "middle" => self.x - metrics.width / 2.0,
+            "end" => self.x - metrics.width,
+            _ => self.x,
+        };
+        (x, self.y - metrics.ascender, metrics.width, metrics.height)
+    }
+    
+    /// Get detailed text metrics
+    pub fn metrics(&self) -> crate::font::TextMetrics {
+        crate::font::measure_text(&self.content, &self.font, self.size)
+    }
 }
 
 /// Image primitive

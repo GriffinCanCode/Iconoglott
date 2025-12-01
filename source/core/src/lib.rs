@@ -14,6 +14,7 @@
 // Core modules (always compiled)
 mod hash;
 mod dsl;
+pub mod font;
 
 // Scene/rendering modules (python or bench feature)
 #[cfg(any(feature = "python", feature = "bench"))]
@@ -78,6 +79,9 @@ fn iconoglott_core(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
 
 // Core ID/hashing (always available)
 pub use hash::{ContentHash, ElementId, ElementKind, Fnv1a, IdGen};
+
+// Font metrics (always available)
+pub use font::{get_metrics, measure_text, FontMetrics, TextMetrics};
 
 // Lexer & Parser (always available) - re-export from dsl module
 pub use dsl::{

@@ -176,6 +176,28 @@ pub fn render_text(x: f32, y: f32, content: &str, font: &str, size: f32, weight:
     )
 }
 
+/// Measure text dimensions using font metrics
+/// Returns JSON: {"width": f32, "height": f32, "ascender": f32, "descender": f32}
+#[wasm_bindgen]
+pub fn measure_text(content: &str, font: &str, size: f32) -> String {
+    let m = crate::font::measure_text(content, font, size);
+    format!(r#"{{"width":{},"height":{},"ascender":{},"descender":{}}}"#, 
+        m.width, m.height, m.ascender, m.descender)
+}
+
+/// Compute text bounding box accounting for anchor position
+/// Returns JSON: [x, y, width, height]
+#[wasm_bindgen]
+pub fn compute_text_bounds(x: f32, y: f32, content: &str, font: &str, size: f32, anchor: &str) -> String {
+    let m = crate::font::measure_text(content, font, size);
+    let adj_x = match anchor {
+        "middle" => x - m.width / 2.0,
+        "end" => x - m.width,
+        _ => x,
+    };
+    format!("[{},{},{},{}]", adj_x, y - m.ascender, m.width, m.height)
+}
+
 #[wasm_bindgen]
 pub fn render_image(x: f32, y: f32, w: f32, h: f32, href: &str, transform: Option<String>) -> String {
     let tf = transform.map_or(String::new(), |t| format!(r#" transform="{}""#, t));
