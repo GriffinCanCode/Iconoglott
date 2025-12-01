@@ -36,18 +36,33 @@ export type { ShapeDict, WasmDiffOp, WasmDiffResult, WasmSceneInput } from './co
 export { createClient } from './client/ws';
 export type { IconoglottClient, IconoglottClientOptions } from './client/ws';
 
+// Re-export Canvas (for convenience - also available via /canvas)
+export { 
+  Canvas, 
+  createContainCanvas, 
+  createCoverCanvas, 
+  createFillCanvas,
+  renderTo, 
+  connectTo,
+  CARD_PRESET,
+  BACKGROUND_PRESET,
+  ICON_PRESET,
+  THUMBNAIL_PRESET,
+} from './canvas';
+export type { CanvasOptions, CanvasFit } from './canvas';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // High-level API (WASM required)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getWasm, tryGetWasm, initWasm } from './wasm/bridge';
-import { renderShapeWasm, renderSceneWasm } from './core/wasm-renderer';
-import type { Canvas } from './core/types';
+import { renderShapeWasm, renderSceneWasm, type ShapeDict } from './core/wasm-renderer';
+import { CANVAS_SIZES, type Canvas, type CanvasSize } from './core/types';
 
 /** Parsed AST node (from Rust parser) */
 export interface AstNode {
   Scene?: AstNode[];
-  Canvas?: { width: number; height: number; fill: string };
+  Canvas?: { size: string; fill: string };
   Shape?: AstShape;
   Variable?: { name: string; value: unknown };
 }
@@ -117,26 +132,26 @@ export function tokenize(source: string): unknown[] {
 /**
  * Convert AST shape to internal dict format for rendering.
  */
-function astShapeToDict(shape: AstShape): Record<string, unknown> {
+function astShapeToDict(shape: AstShape): ShapeDict {
   return {
     kind: shape.kind,
-    props: shape.props,
+    props: shape.props as Record<string, unknown>,
     style: {
-      fill: shape.style.fill ?? shape.props.fill,
-      stroke: shape.style.stroke,
+      fill: (shape.style.fill ?? shape.props.fill) as string | undefined,
+      stroke: shape.style.stroke ?? undefined,
       strokeWidth: shape.style.stroke_width,
       opacity: shape.style.opacity,
       corner: shape.style.corner,
-      font: shape.style.font,
+      font: shape.style.font ?? undefined,
       fontSize: shape.style.font_size,
       fontWeight: shape.style.font_weight,
       textAnchor: shape.style.text_anchor,
     },
     transform: {
-      translate: shape.transform.translate,
+      translate: shape.transform.translate ?? undefined,
       rotate: shape.transform.rotate,
-      scale: shape.transform.scale,
-      origin: shape.transform.origin,
+      scale: shape.transform.scale ?? undefined,
+      origin: shape.transform.origin ?? undefined,
     },
     children: shape.children.map(astShapeToDict),
   };
@@ -161,23 +176,26 @@ function astShapeToDict(shape: AstShape): Record<string, unknown> {
  */
 export function render(source: string): string {
   const wasm = getWasm();
-  const { ast, errors } = parse(source);
+  const { ast } = parse(source);
   
   // Extract canvas and shapes from AST
   let canvas: Canvas = { size: 'medium', fill: '#fff', width: 64, height: 64 };
-  const shapes: Record<string, unknown>[] = [];
+  const shapes: ShapeDict[] = [];
   
   const nodes = ast.Scene ?? [ast];
   for (const node of nodes) {
     if (node.Canvas) {
-      canvas = node.Canvas;
+      // Map AstCanvas to Canvas with computed dimensions
+      const astCanvas = node.Canvas;
+      const dims = CANVAS_SIZES[astCanvas.size.toLowerCase() as CanvasSize] ?? { width: 64, height: 64 };
+      canvas = { size: astCanvas.size.toLowerCase() as CanvasSize, fill: astCanvas.fill, ...dims };
     } else if (node.Shape) {
-      shapes.push(astShapeToDict(node.Shape));
+      shapes.push(astShapeToDict(node.Shape) as ShapeDict);
     }
   }
   
   // Render shapes with WASM
-  const elementsSvg = shapes.map(s => renderShapeWasm(s as Parameters<typeof renderShapeWasm>[0], wasm)).join('');
+  const elementsSvg = shapes.map(s => renderShapeWasm(s, wasm)).join('');
   
   // Generate full SVG
   return renderSceneWasm(wasm, canvas, '', elementsSvg);

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Iconoglott Test</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0c10;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --success: #3fb950;
+      --error: #f85149;
+    }
+    
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: 'Outfit', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    
+    header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), #a855f7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: var(--surface);
+      border-radius: 2rem;
+      font-size: 0.875rem;
+    }
+    
+    .status::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--error);
+    }
+    
+    .status.connected::before {
+      background: var(--success);
+    }
+    
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+    
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    
+    .panel-header {
+      padding: 1rem;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      color: var(--muted);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    
+    .editor-wrap {
+      position: relative;
+      height: 400px;
+    }
+    
+    #editor {
+      width: 100%;
+      height: 100%;
+      padding: 1rem;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      resize: none;
+      outline: none;
+    }
+    
+    #canvas {
+      height: 400px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      background: 
+        radial-gradient(circle at 50% 50%, rgba(88, 166, 255, 0.03) 0%, transparent 50%),
+        linear-gradient(135deg, rgba(168, 85, 247, 0.02) 0%, transparent 50%);
+    }
+    
+    #canvas svg {
+      max-width: 100%;
+      max-height: 100%;
+      border-radius: 8px;
+    }
+    
+    .tests {
+      margin-top: 1.5rem;
+    }
+    
+    .test-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .test-header h2 {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    #run-tests {
+      padding: 0.5rem 1.25rem;
+      background: var(--accent);
+      color: #000;
+      border: none;
+      border-radius: 6px;
+      font-family: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.1s, opacity 0.1s;
+    }
+    
+    #run-tests:hover { opacity: 0.9; }
+    #run-tests:active { transform: scale(0.98); }
+    
+    #test-results {
+      padding: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      line-height: 1.8;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    
+    .test-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .test-item.pass::before {
+      content: '✓';
+      color: var(--success);
+    }
+    
+    .test-item.fail::before {
+      content: '✗';
+      color: var(--error);
+    }
+    
+    .test-item.pending::before {
+      content: '○';
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Iconoglott Test</h1>
+      <div class="status" id="status">Connecting...</div>
+    </header>
+    
+    <div class="grid">
+      <div class="panel">
+        <div class="panel-header">DSL Editor</div>
+        <div class="editor-wrap">
+          <textarea id="editor" spellcheck="false">canvas 300x200 fill #0a0f1a
+
+// Animated orb
+circle at 150,100 radius 40
+  gradient radial #58a6ff #0a0f1a
+  shadow 0,0 20 #58a6ff40
+
+// Label
+text "iconoglott" at 150,100
+  font "Outfit" 14
+  fill #fff
+  center
+  bold
+
+// Decorative shapes
+rect at 30,30 size 40x40
+  fill #a855f720
+  corner 8
+  rotate 15
+
+polygon points [(250,140) (270,180) (230,180)]
+  fill #3fb95040</textarea>
+        </div>
+      </div>
+      
+      <div class="panel">
+        <div class="panel-header">Rendered Output</div>
+        <div id="canvas"></div>
+      </div>
+    </div>
+    
+    <div class="panel tests">
+      <div class="test-header">
+        <h2>Integration Tests</h2>
+        <button id="run-tests">Run Tests</button>
+      </div>
+      <div id="test-results">
+        <div class="test-item pending">Canvas Connection</div>
+        <div class="test-item pending">Canvas Rendering</div>
+        <div class="test-item pending">Shape Types</div>
+        <div class="test-item pending">Fit Modes</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>
+

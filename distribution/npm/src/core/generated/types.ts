@@ -10,7 +10,7 @@
 /**
  * Token types for lexical analysis
  */
-export type TokenType = "Ident" | "Number" | "Percent" | "String" | "Color" | "Var" | "Pair" | "PercentPair" | "Size" | "Colon" | "Equals" | "Arrow" | "LBracket" | "RBracket" | "Newline" | "Indent" | "Dedent" | "Eof";
+export type TokenType = "Ident" | "Number" | "Percent" | "String" | "Color" | "Var" | "Pair" | "PercentPair" | "Size" | "Colon" | "Equals" | "Arrow" | "LBracket" | "RBracket" | "Newline" | "Indent" | "Dedent" | "Eof" | "AtKeyframes" | "Duration";
 
 /**
  * Standard canvas sizes (10-tier system)
@@ -30,6 +30,51 @@ export type Token = { ttype: TokenType, value: TokenValue, line: number, col: nu
 // ─────────────────────────────────────────────────────────────────────────────
 // AST Types
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Dimension (absolute or percent)
+ */
+export type Dimension = { "Abs": number } | { "Pct": number };
+
+/**
+ * Pair of dimensions
+ */
+export type DimensionPair = [Dimension, Dimension];
+
+/**
+ * Layout properties for flex containers
+ */
+export type LayoutProps = { direction: string, gap: number, padding: number, justify: string, align: string, wrap: boolean, };
+
+/**
+ * Animation state for a shape
+ */
+export type AnimationState = { name: string, duration: number, easing: string, delay: number, iteration: string, direction: string, fill_mode: string, };
+
+/**
+ * Symbol definition (reusable component)
+ */
+export type AstSymbol = { name: string, children: Array<AstShape>, };
+
+/**
+ * Symbol instantiation
+ */
+export type AstUse = { name: string, at: [number, number] | null, style: AstStyle, transform: AstTransform, animation: AnimationState | null, };
+
+/**
+ * Use element (symbol instance in scene)
+ */
+export type Use = { symbol_name: string, x: number, y: number, transform: string | null, style: ShapeStyle, };
+
+/**
+ * Single keyframe step
+ */
+export type KeyframeStep = { offset: number, properties: Record<string, unknown>, };
+
+/**
+ * Keyframes animation definition
+ */
+export type Keyframes = { name: string, steps: Array<KeyframeStep>, };
 
 /**
  * Style properties for shapes
@@ -84,12 +129,12 @@ export type PropValue = "None" | { "Str": string } | { "Num": number } | { "Pair
 /**
  * Shape in the AST
  */
-export type AstShape = { kind: string, props: { [key in string]?: PropValue }, style: AstStyle, shadow: ShadowDef | null, gradient: GradientDef | null, transform: AstTransform, children: Array<AstShape>, };
+export type AstShape = { kind: string, props: { [key in string]?: PropValue }, style: AstStyle, shadow: ShadowDef | null, gradient: GradientDef | null, transform: AstTransform, animation: AnimationState | null, children: Array<AstShape>, };
 
 /**
  * AST node types
  */
-export type AstNode = { "Scene": Array<AstNode> } | { "Canvas": AstCanvas } | { "Shape": AstShape } | { "Graph": AstGraph } | { "Variable": { name: string, value: TokenValue | null, } };
+export type AstNode = { "Scene": Array<AstNode> } | { "Canvas": AstCanvas } | { "Shape": AstShape } | { "Graph": AstGraph } | { "Symbol": AstSymbol } | { "Use": AstUse } | { "Variable": { name: string, value: TokenValue | null, } } | { "Keyframes": Keyframes };
 
 /**
  * Error severity levels
@@ -123,7 +168,11 @@ export type Color = { r: number, g: number, b: number, a: number, };
 /**
  * Style properties for shapes
  */
-export type ShapeStyle = { fill: string | null, stroke: string | null, stroke_width: number, opacity: number, corner: number, filter: string | null, };
+export type ShapeStyle = { fill: string | null, stroke: string | null, stroke_width: number, opacity: number, corner: number, filter: string | null, 
+/**
+ * Animation class name (references CSS animation)
+ */
+animation_class: string | null, };
 
 /**
  * Rectangle primitive
@@ -197,7 +246,7 @@ export type Edge = { from_id: string, to_id: string, from_pt: [number, number], 
 /**
  * A renderable element in the scene
  */
-export type Element = { "Rect": Rect } | { "Circle": Circle } | { "Ellipse": Ellipse } | { "Line": Line } | { "Path": Path } | { "Polygon": Polygon } | { "Text": TextShape } | { "Image": ImageShape } | { "Diamond": Diamond } | { "Node": GraphNodeShape } | { "Edge": Edge } | { "Group": [Array<Element>, string | null] } | { "Graph": GraphContainer };
+export type Element = { "Rect": Rect } | { "Circle": Circle } | { "Ellipse": Ellipse } | { "Line": Line } | { "Path": Path } | { "Polygon": Polygon } | { "Text": TextShape } | { "Image": ImageShape } | { "Diamond": Diamond } | { "Node": GraphNodeShape } | { "Edge": Edge } | { "Group": [Array<Element>, string | null] } | { "Graph": GraphContainer } | { "Use": Use };
 
 /**
  * Container for graph elements with layout info
