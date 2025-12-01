@@ -1,9 +1,13 @@
-//! Iconoglott Core - Rust rendering engine with Python bindings
+//! Iconoglott Core - High-performance SVG rendering engine
 //!
 //! Features:
 //! - Stable element IDs via content-addressed hashing
 //! - Incremental scene diffing with O(n) reconciliation
 //! - SVG fragment memoization for render caching
+//!
+//! Targets:
+//! - Python: `cargo build --features python` (PyO3 bindings)
+//! - WASM: `wasm-pack build --features wasm` (wasm-bindgen)
 
 mod cache;
 mod diff;
@@ -12,12 +16,21 @@ mod render;
 mod scene;
 mod shape;
 
+#[cfg(feature = "wasm")]
+mod wasm;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Python Bindings (via PyO3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
+
+#[cfg(feature = "python")]
 use render::{compute_patches, index_scene, needs_redraw, RenderPatch};
-use scene::{Filter, Gradient, Scene};
-use shape::{Circle, Color, Ellipse, Image, Line, Path, Polygon, Rect, Style, Text};
 
 /// Python module entry point
+#[cfg(feature = "python")]
 #[pymodule]
 fn iconoglott_core(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     // Scene & definitions
@@ -43,4 +56,13 @@ fn iconoglott_core(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(index_scene, m)?)?;
     Ok(())
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Re-exports for library consumers
+// ─────────────────────────────────────────────────────────────────────────────
+
+pub use diff::{DiffOp, DiffResult, IndexedScene};
+pub use id::{ContentHash, ElementId, ElementKind, Fnv1a, IdGen};
+pub use scene::{Element, Filter, Gradient, Scene};
+pub use shape::{Circle, Color, Ellipse, Image, Line, Path, Polygon, Rect, Style, Text};
 

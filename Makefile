@@ -2,10 +2,11 @@
 SHELL := /bin/bash
 .PHONY: all clean install dev test start stop killports lint build core
 
+ROOT_DIR := $(shell pwd)
 VENV := .venv
 PYTHON := $(VENV)/bin/python3
 PIP := $(VENV)/bin/pip
-MATURIN := $(VENV)/bin/maturin
+MATURIN := $(ROOT_DIR)/$(VENV)/bin/maturin
 
 # Setup venv, install deps, and build Rust core (required)
 install: $(VENV) core
