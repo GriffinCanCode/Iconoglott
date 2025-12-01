@@ -4,32 +4,27 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Union
 
+from .errors import ErrorInfo, ErrorCode, Severity
+
 
 class TokenType(Enum):
     """Token types for lexical analysis."""
-    # Literals
-    IDENT = auto()      # keywords, shape names
-    NUMBER = auto()     # 100, 3.14
-    STRING = auto()     # "hello"
-    COLOR = auto()      # #fff, #e94560
-    VAR = auto()        # $name
-    
-    # Compound literals
-    PAIR = auto()       # 100,200 or 100x200
-    
-    # Operators
-    COLON = auto()      # :
-    EQUALS = auto()     # =
-    ARROW = auto()      # ->
-    
-    # Structure
+    IDENT = auto()
+    NUMBER = auto()
+    STRING = auto()
+    COLOR = auto()
+    VAR = auto()
+    PAIR = auto()
+    COLON = auto()
+    EQUALS = auto()
+    ARROW = auto()
+    LBRACKET = auto()
+    RBRACKET = auto()
     NEWLINE = auto()
     INDENT = auto()
     DEDENT = auto()
     EOF = auto()
-    
-    # Comments
-    COMMENT = auto()    # // comment
+    COMMENT = auto()
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +34,23 @@ class Token:
     value: Union[str, float, tuple]
     line: int = 0
     col: int = 0
+
+
+# Deprecated: Use ErrorInfo from errors.py instead
+# Kept for backward compatibility during migration
+@dataclass(slots=True)
+class ParseError:
+    """Syntax error with location. Deprecated: use ErrorInfo."""
+    message: str
+    line: int
+    col: int = 0
+    code: ErrorCode = ErrorCode.PARSE_UNEXPECTED_TOKEN
+    
+    def to_error_info(self) -> ErrorInfo:
+        return ErrorInfo(self.code, self.message, self.line, self.col)
+    
+    def __str__(self) -> str:
+        return f"E{self.code.value} Line {self.line + 1}: {self.message}"
 
 
 @dataclass(slots=True)

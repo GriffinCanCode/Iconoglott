@@ -3,6 +3,7 @@
 import re
 from typing import Iterator
 from .types import Token, TokenType
+from .errors import ErrorCode, ErrorInfo, ErrorList
 
 
 class Lexer:
@@ -22,6 +23,9 @@ class Lexer:
         (r"'[^']*'", TokenType.STRING),
         # Numbers
         (r'-?\d+\.?\d*', TokenType.NUMBER),
+        # Brackets (for polygon points)
+        (r'\[', TokenType.LBRACKET),
+        (r'\]', TokenType.RBRACKET),
         # Operators
         (r'->', TokenType.ARROW),
         (r':', TokenType.COLON),
@@ -34,6 +38,7 @@ class Lexer:
         self.source = source
         self.lines = source.split('\n')
         self.indent_stack = [0]
+        self.errors: ErrorList = []
 
     def tokenize(self) -> Iterator[Token]:
         """Generate tokens from source."""
@@ -86,7 +91,12 @@ class Lexer:
                     break
             
             if not matched:
-                pos += 1  # Skip unknown char
+                self._error(ErrorCode.LEX_UNKNOWN_CHAR, f"Unknown character: '{line[pos]}'", lineno, pos)
+                pos += 1
+    
+    def _error(self, code: ErrorCode, msg: str, line: int, col: int):
+        """Record a lexer error."""
+        self.errors.append(ErrorInfo(code, msg, line, col))
 
     def _parse_value(self, raw: str, ttype: TokenType):
         """Parse token value based on type."""
