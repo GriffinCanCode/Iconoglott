@@ -54,6 +54,24 @@ export interface SizeInfo {
   height: number;
 }
 
+// Graph layout types
+export interface NodeInput {
+  id: string;
+  w: number;
+  h: number;
+}
+
+export interface NodePosition {
+  id: string;
+  cx: number;
+  cy: number;
+}
+
+export interface EdgeAnchors {
+  from: [number, number];
+  to: [number, number];
+}
+
 export interface EdgeAnchors {
   from: [number, number];
   to: [number, number];
@@ -98,14 +116,14 @@ export interface WasmCore {
   render_text(x: number, y: number, content: string, font: string, size: number, weight: string, anchor: string, fill: string, transform?: string): string;
   render_image(x: number, y: number, w: number, h: number, href: string, transform?: string): string;
   
-  // Graph/Flowchart rendering
-  render_diamond(cx: number, cy: number, w: number, h: number, style: string, transform?: string): string;
-  render_node(id: string, shape: string, cx: number, cy: number, w: number, h: number, label: string | undefined, style: string): string;
+  // Graph/Flowchart rendering - native JS objects via serde-wasm-bindgen
+  render_diamond(cx: number, cy: number, w: number, h: number, style: WasmStyle, transform?: string): string;
+  render_node(id: string, shape: string, cx: number, cy: number, w: number, h: number, label: string | undefined, style: WasmStyle): string;
   render_edge(fromX: number, fromY: number, toX: number, toY: number, edgeStyle: string, arrow: string, label: string | undefined, stroke: string, strokeWidth: number): string;
   render_arrow_markers(color: string): string;
-  compute_edge_anchors(fromCx: number, fromCy: number, fromW: number, fromH: number, toCx: number, toCy: number, toW: number, toH: number): string;
-  layout_hierarchical(nodesJson: string, direction: string, spacing: number): string;
-  layout_grid(nodesJson: string, spacing: number): string;
+  compute_edge_anchors(fromCx: number, fromCy: number, fromW: number, fromH: number, toCx: number, toCy: number, toW: number, toH: number): EdgeAnchors;
+  layout_hierarchical(nodes: NodeInput[], direction: string, spacing: number): NodePosition[];
+  layout_grid(nodes: NodeInput[], spacing: number): NodePosition[];
   
   // Definitions
   render_linear_gradient(id: string, fromColor: string, toColor: string, angle: number): string;

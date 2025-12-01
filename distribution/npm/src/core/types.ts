@@ -104,10 +104,52 @@ export interface Shape {
   children: Shape[];
 }
 
-export interface Node {
+/** Node shapes for graphs/flowcharts */
+export type NodeShape = 'rect' | 'circle' | 'ellipse' | 'diamond';
+
+/** Edge line styles */
+export type EdgeStyle = 'straight' | 'curved' | 'orthogonal';
+
+/** Arrow types for edges */
+export type ArrowType = 'none' | 'forward' | 'backward' | 'both';
+
+/** Graph layout algorithms */
+export type GraphLayout = 'manual' | 'hierarchical' | 'grid' | 'tree' | 'force';
+
+/** A node in a graph/flowchart */
+export interface GraphNode {
+  id: string;
+  shape: NodeShape;
+  label?: string;
+  at?: [number, number];  // [cx, cy]
+  size?: [number, number]; // [width, height]
+  style?: Partial<Style>;
+}
+
+/** An edge/connector between nodes */
+export interface GraphEdge {
+  from: string;
+  to: string;
+  style: EdgeStyle;
+  arrow: ArrowType;
+  label?: string;
+  stroke?: string;
+  strokeWidth: number;
+}
+
+/** Graph container with layout */
+export interface Graph {
+  layout: GraphLayout;
+  direction: 'vertical' | 'horizontal';
+  spacing: number;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export interface AstNode {
   type: string;
-  value?: Canvas | Shape | Record<string, unknown>;
-  children: Node[];
+  value?: Canvas | Shape | Graph | Record<string, unknown>;
+  children: AstNode[];
 }
 
 export const defaultStyle = (): Style => ({

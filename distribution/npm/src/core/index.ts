@@ -9,6 +9,14 @@ export type {
   Transform,
   Token,
   TokenType,
+  // Graph/flowchart types
+  NodeShape,
+  EdgeStyle,
+  ArrowType,
+  GraphLayout,
+  GraphNode,
+  GraphEdge,
+  Graph,
 } from './types';
 
 export {

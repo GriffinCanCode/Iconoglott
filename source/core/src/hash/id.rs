@@ -117,6 +117,10 @@ pub enum ElementKind {
     Group = 8,
     Gradient = 9,
     Filter = 10,
+    Diamond = 11,
+    Node = 12,
+    Edge = 13,
+    Graph = 14,
 }
 
 impl ElementKind {
@@ -135,6 +139,10 @@ impl ElementKind {
             Self::Group => "group",
             Self::Gradient => "gradient",
             Self::Filter => "filter",
+            Self::Diamond => "diamond",
+            Self::Node => "node",
+            Self::Edge => "edge",
+            Self::Graph => "graph",
         }
     }
 }
