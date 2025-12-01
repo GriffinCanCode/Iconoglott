@@ -154,13 +154,20 @@ export class Parser {
         else if (!('width' in props)) props.width = val;
       } else if (this.match('STRING')) {
         props.content = this.advance()!.value;
+      } else if (this.match('LBRACKET')) {
+        if (kind === 'polygon') props.points = this.parsePoints();
+        else this.advance();
       } else if (this.match('IDENT')) {
         const key = this.advance()!.value as string;
         if (key === 'at' && this.match('PAIR')) props.at = this.advance()!.value;
         else if (key === 'size' && this.match('PAIR')) props.size = this.advance()!.value;
+        else if (key === 'radius' && this.match('PAIR')) props.radius = this.advance()!.value;
         else if (key === 'radius' && this.match('NUMBER')) props.radius = this.advance()!.value;
         else if (key === 'from' && this.match('PAIR')) props.from = this.advance()!.value;
         else if (key === 'to' && this.match('PAIR')) props.to = this.advance()!.value;
+        else if (key === 'd' && this.match('STRING')) props.d = this.advance()!.value;
+        else if (key === 'points' && this.match('LBRACKET')) props.points = this.parsePoints();
+        else if (key === 'href' && this.match('STRING')) props.href = this.advance()!.value;
       } else if (this.match('COLOR', 'VAR')) {
         if (!('fill' in props)) props.fill = this.resolve(this.advance()!);
       } else {
@@ -204,6 +211,12 @@ export class Parser {
         } else if (prop === 'width' && this.peekNext?.type === 'NUMBER') {
           this.advance();
           shape.style.strokeWidth = this.advance()!.value as number;
+        } else if (prop === 'd' && this.peekNext?.type === 'STRING') {
+          this.advance();
+          shape.props.d = this.advance()!.value;
+        } else if (prop === 'points' && this.peekNext?.type === 'LBRACKET') {
+          this.advance();
+          shape.props.points = this.parsePoints();
         } else {
           this.advance();
         }
@@ -311,5 +324,16 @@ export class Parser {
       }
     }
     return gradient;
+  }
+
+  private parsePoints(): [number, number][] {
+    const points: [number, number][] = [];
+    this.advance(); // consume [
+    while (this.current && !this.match('RBRACKET')) {
+      if (this.match('PAIR')) points.push(this.advance()!.value as [number, number]);
+      else this.advance();
+    }
+    if (this.match('RBRACKET')) this.advance();
+    return points;
   }
 }

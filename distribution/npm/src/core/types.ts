@@ -1,7 +1,7 @@
 /** Token types for lexical analysis */
 export type TokenType =
   | 'IDENT' | 'NUMBER' | 'STRING' | 'COLOR' | 'VAR' | 'PAIR'
-  | 'COLON' | 'EQUALS' | 'ARROW'
+  | 'COLON' | 'EQUALS' | 'ARROW' | 'LBRACKET' | 'RBRACKET'
   | 'NEWLINE' | 'INDENT' | 'DEDENT' | 'EOF';
 
 export interface Token {
