@@ -2,6 +2,8 @@
 //!
 //! Tokenizes DSL source into a stream of tokens with indentation tracking.
 
+use lazy_static::lazy_static;
+use regex_lite::Regex;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -196,8 +198,33 @@ impl Token {
 
 /// Pattern for token matching
 struct Pattern {
-    regex: regex_lite::Regex,
+    regex: Regex,
     ttype: Option<TokenType>,
+}
+
+lazy_static! {
+    /// Cached lexer patterns - built once, reused across all Lexer instances
+    static ref PATTERNS: Vec<Pattern> = vec![
+        Pattern { regex: Regex::new(r"^//[^\n]*").unwrap(), ttype: None }, // Comments
+        Pattern { regex: Regex::new(r"^\$[a-zA-Z_][a-zA-Z0-9_]*").unwrap(), ttype: Some(TokenType::Var) },
+        Pattern { regex: Regex::new(r"^#[0-9a-fA-F]{3,8}\b").unwrap(), ttype: Some(TokenType::Color) },
+        // Percent pairs must come before regular pairs (50%,50% or 50%x50%)
+        Pattern { regex: Regex::new(r"^-?\d+\.?\d*%[,x]-?\d+\.?\d*%").unwrap(), ttype: Some(TokenType::PercentPair) },
+        Pattern { regex: Regex::new(r"^-?\d+\.?\d*[,x]-?\d+\.?\d*").unwrap(), ttype: Some(TokenType::Pair) },
+        // Single percentage (50%)
+        Pattern { regex: Regex::new(r"^-?\d+\.?\d*%").unwrap(), ttype: Some(TokenType::Percent) },
+        Pattern { regex: Regex::new(r#"^"[^"]*""#).unwrap(), ttype: Some(TokenType::String) },
+        Pattern { regex: Regex::new(r"^'[^']*'").unwrap(), ttype: Some(TokenType::String) },
+        Pattern { regex: Regex::new(r"^-?\d+\.?\d*").unwrap(), ttype: Some(TokenType::Number) },
+        Pattern { regex: Regex::new(r"^\[").unwrap(), ttype: Some(TokenType::LBracket) },
+        Pattern { regex: Regex::new(r"^\]").unwrap(), ttype: Some(TokenType::RBracket) },
+        Pattern { regex: Regex::new(r"^->").unwrap(), ttype: Some(TokenType::Arrow) },
+        Pattern { regex: Regex::new(r"^:").unwrap(), ttype: Some(TokenType::Colon) },
+        Pattern { regex: Regex::new(r"^=").unwrap(), ttype: Some(TokenType::Equals) },
+        // Size keywords before general identifiers
+        Pattern { regex: Regex::new(r"^(nano|micro|tiny|small|medium|large|xlarge|xl|huge|massive|giant)\b").unwrap(), ttype: Some(TokenType::Size) },
+        Pattern { regex: Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_-]*").unwrap(), ttype: Some(TokenType::Ident) },
+    ];
 }
 
 /// Lexer for tokenizing DSL source
@@ -206,42 +233,15 @@ pub struct Lexer {
     lines: Vec<String>,
     indent_stack: Vec<usize>,
     line_idx: usize,
-    patterns: Vec<Pattern>,
 }
 
 impl Lexer {
-    fn build_patterns() -> Vec<Pattern> {
-        use regex_lite::Regex;
-        vec![
-            Pattern { regex: Regex::new(r"^//[^\n]*").unwrap(), ttype: None }, // Comments
-            Pattern { regex: Regex::new(r"^\$[a-zA-Z_][a-zA-Z0-9_]*").unwrap(), ttype: Some(TokenType::Var) },
-            Pattern { regex: Regex::new(r"^#[0-9a-fA-F]{3,8}\b").unwrap(), ttype: Some(TokenType::Color) },
-            // Percent pairs must come before regular pairs (50%,50% or 50%x50%)
-            Pattern { regex: Regex::new(r"^-?\d+\.?\d*%[,x]-?\d+\.?\d*%").unwrap(), ttype: Some(TokenType::PercentPair) },
-            Pattern { regex: Regex::new(r"^-?\d+\.?\d*[,x]-?\d+\.?\d*").unwrap(), ttype: Some(TokenType::Pair) },
-            // Single percentage (50%)
-            Pattern { regex: Regex::new(r"^-?\d+\.?\d*%").unwrap(), ttype: Some(TokenType::Percent) },
-            Pattern { regex: Regex::new(r#"^"[^"]*""#).unwrap(), ttype: Some(TokenType::String) },
-            Pattern { regex: Regex::new(r"^'[^']*'").unwrap(), ttype: Some(TokenType::String) },
-            Pattern { regex: Regex::new(r"^-?\d+\.?\d*").unwrap(), ttype: Some(TokenType::Number) },
-            Pattern { regex: Regex::new(r"^\[").unwrap(), ttype: Some(TokenType::LBracket) },
-            Pattern { regex: Regex::new(r"^\]").unwrap(), ttype: Some(TokenType::RBracket) },
-            Pattern { regex: Regex::new(r"^->").unwrap(), ttype: Some(TokenType::Arrow) },
-            Pattern { regex: Regex::new(r"^:").unwrap(), ttype: Some(TokenType::Colon) },
-            Pattern { regex: Regex::new(r"^=").unwrap(), ttype: Some(TokenType::Equals) },
-            // Size keywords before general identifiers
-            Pattern { regex: Regex::new(r"^(nano|micro|tiny|small|medium|large|xlarge|xl|huge|massive|giant)\b").unwrap(), ttype: Some(TokenType::Size) },
-            Pattern { regex: Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_-]*").unwrap(), ttype: Some(TokenType::Ident) },
-        ]
-    }
-
     /// Create a new lexer for the given source
     pub fn new(source: &str) -> Self {
         Self {
             lines: source.split('\n').map(String::from).collect(),
             indent_stack: vec![0],
             line_idx: 0,
-            patterns: Self::build_patterns(),
         }
     }
 
@@ -308,7 +308,7 @@ impl Lexer {
             }
 
             let mut matched = false;
-            for pattern in &self.patterns {
+            for pattern in PATTERNS.iter() {
                 if let Some(m) = pattern.regex.find(remaining) {
                     if let Some(ttype) = pattern.ttype {
                         let raw = m.as_str();
