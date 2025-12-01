@@ -163,8 +163,21 @@ pub fn prop_value_to_py(py: Python<'_>, val: &PropValue) -> PyObject {
         PropValue::None => py.None(),
         PropValue::Str(s) => s.into_py(py),
         PropValue::Num(n) => n.into_py(py),
-        PropValue::Pair(a, b) => (*a, *b).into_py(py),
+        PropValue::Pair(a, b) | PropValue::PercentPair(a, b) => (*a, *b).into_py(py),
         PropValue::Points(pts) => PyList::new(py, pts.iter().map(|(a, b)| (*a, *b))).into(),
+        PropValue::Dim(d) => dimension_to_py(py, d),
+        PropValue::DimPair(dp) => (dimension_to_py(py, &dp.width), dimension_to_py(py, &dp.height)).into_py(py),
+        PropValue::Layout(_) => "<layout>".into_py(py),
+        PropValue::VarRef(name, _, _) => format!("${}", name).into_py(py),
+    }
+}
+
+/// Convert Dimension to Python object
+fn dimension_to_py(py: Python<'_>, dim: &Dimension) -> PyObject {
+    match dim {
+        Dimension::Px(v) => v.into_py(py),
+        Dimension::Percent(p) => format!("{}%", p).into_py(py),
+        Dimension::Auto => "auto".into_py(py),
     }
 }
 
@@ -174,7 +187,7 @@ pub fn token_value_to_py(py: Python<'_>, val: Option<&TokenValue>) -> PyObject {
         None | Some(TokenValue::None) => py.None(),
         Some(TokenValue::Str(s)) => s.into_py(py),
         Some(TokenValue::Num(n)) => n.into_py(py),
-        Some(TokenValue::Pair(a, b)) => (*a, *b).into_py(py),
+        Some(TokenValue::Pair(a, b)) | Some(TokenValue::PercentPair(a, b)) => (*a, *b).into_py(py),
     }
 }
 

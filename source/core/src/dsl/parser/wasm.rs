@@ -4,6 +4,7 @@
 
 use super::ast::{AstNode, ParseError};
 use super::core::Parser;
+use super::symbols::resolve;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
@@ -14,16 +15,23 @@ pub fn parse(source: &str) -> String {
     let tokens = lexer.tokenize();
     let mut parser = Parser::new(tokens);
     let ast = parser.parse();
-    serde_json::to_string(&ast).unwrap_or_else(|_| "null".to_string())
+    // Run resolution pass to resolve variable references
+    let result = resolve(ast);
+    serde_json::to_string(&result.ast).unwrap_or_else(|_| "null".to_string())
 }
 
-/// Parse and return errors as JSON
+/// Parse and return errors as JSON (includes both parse and resolution errors)
 #[wasm_bindgen]
 pub fn parse_with_errors(source: &str) -> String {
     let mut lexer = super::super::lexer::Lexer::new(source);
     let tokens = lexer.tokenize();
     let mut parser = Parser::new(tokens);
     let ast = parser.parse();
+    let mut errors = parser.errors;
+    
+    // Run resolution pass
+    let result = resolve(ast);
+    errors.extend(result.errors);
     
     #[derive(Serialize)]
     struct ParseResult {
@@ -31,7 +39,7 @@ pub fn parse_with_errors(source: &str) -> String {
         errors: Vec<ParseError>,
     }
     
-    serde_json::to_string(&ParseResult { ast, errors: parser.errors })
+    serde_json::to_string(&ParseResult { ast: result.ast, errors })
         .unwrap_or_else(|_| r#"{"ast":null,"errors":[]}"#.to_string())
 }
 
