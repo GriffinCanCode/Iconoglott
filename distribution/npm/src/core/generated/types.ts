@@ -10,7 +10,7 @@
 /**
  * Token types for lexical analysis
  */
-export type TokenType = "Ident" | "Number" | "String" | "Color" | "Var" | "Pair" | "Size" | "Colon" | "Equals" | "Arrow" | "LBracket" | "RBracket" | "Newline" | "Indent" | "Dedent" | "Eof";
+export type TokenType = "Ident" | "Number" | "Percent" | "String" | "Color" | "Var" | "Pair" | "PercentPair" | "Size" | "Colon" | "Equals" | "Arrow" | "LBracket" | "RBracket" | "Newline" | "Indent" | "Dedent" | "Eof";
 
 /**
  * Standard canvas sizes (10-tier system)
@@ -20,7 +20,7 @@ export type CanvasSize = "Nano" | "Micro" | "Tiny" | "Small" | "Medium" | "Large
 /**
  * Token value variants
  */
-export type TokenValue = "None" | { "Str": string } | { "Num": number } | { "Pair": [number, number] };
+export type TokenValue = "None" | { "Str": string } | { "Num": number } | { "Pair": [number, number] } | { "PercentPair": [number, number] };
 
 /**
  * A single token from the lexer
@@ -79,7 +79,7 @@ export type AstCanvas = { size: CanvasSize, fill: string, };
 /**
  * Property value types
  */
-export type PropValue = "None" | { "Str": string } | { "Num": number } | { "Pair": [number, number] } | { "Points": Array<[number, number]> };
+export type PropValue = "None" | { "Str": string } | { "Num": number } | { "Pair": [number, number] } | { "Points": Array<[number, number]> } | { "Dim": Dimension } | { "DimPair": DimensionPair } | { "PercentPair": [number, number] } | { "Layout": LayoutProps } | { "VarRef": [string, number, number] };
 
 /**
  * Shape in the AST
@@ -99,7 +99,7 @@ export type ErrorSeverity = "Error" | "Warning" | "Hint";
 /**
  * Error categories for structured diagnostics
  */
-export type ErrorKind = "UnexpectedToken" | "UnknownCommand" | "InvalidValue" | "MissingToken" | "InvalidIndentation" | "UnterminatedBlock" | "InvalidProperty";
+export type ErrorKind = "UnexpectedToken" | "UnknownCommand" | "InvalidValue" | "MissingToken" | "InvalidIndentation" | "UnterminatedBlock" | "InvalidProperty" | "UndefinedVariable" | "DuplicateVariable";
 
 /**
  * Source span for error locations

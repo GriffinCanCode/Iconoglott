@@ -1,4 +1,0 @@
-# file: /Users/griffinstrier/projects/iconoglott/source/lang/lexer.py
-# hypothesis_version: 6.148.3
-
-['"[^"]*"', '#[0-9a-fA-F]{3,8}\\b', "'[^']*'", ',', '->', '-?\\d+\\.?\\d*', '.', '//', '//[^\\n]*', ':', '=', '\\[', '\\]', 'x']

@@ -1,4 +1,0 @@
-# file: /Users/griffinstrier/projects/iconoglott/source/server/__init__.py
-# hypothesis_version: 6.148.3
-
-['ErrorCode', 'ErrorInfo', 'IconoglottError', 'Severity', 'WSError', 'create_app', 'errors_to_response']

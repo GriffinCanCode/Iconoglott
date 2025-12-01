@@ -1,4 +1,0 @@
-# file: /Users/griffinstrier/projects/iconoglott/source/lang/eval.py
-# hypothesis_version: 6.148.3
-
-[0.0, 0.6, 1.0, 1.2, 4.0, 8.0, 16.0, 30.0, 40.0, 50.0, 90.0, 100, '#000', '#0004', '#fff', '&', '&amp;', '&gt;', '&lt;', '<', '>', 'Canvas', 'Evaluation failed', 'Lexer', 'None', 'Num', 'Pair', 'Parser', 'Points', 'Scene', 'Shape', 'Str', 'Variable', 'angle', 'at', 'blur', 'children', 'circle', 'color', 'content', 'corner', 'd', 'direction', 'ellipse', 'fill', 'font', 'font_size', 'font_weight', 'from', 'gap', 'gradient', 'group', 'height', 'href', 'image', 'kind', 'layout', 'line', 'linear', 'normal', 'opacity', 'origin', 'path', 'points', 'polygon', 'props', 'radius', 'rect', 'rotate', 'rust.Style', 'scale', 'shadow', 'size', 'start', 'stroke', 'stroke_width', 'style', 'system-ui', 'text', 'text_anchor', 'to', 'transform', 'translate', 'type', 'vertical', 'width', 'x', 'y']

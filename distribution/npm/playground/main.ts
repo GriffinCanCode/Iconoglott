@@ -7,76 +7,192 @@ import { createClient } from '@iconoglott/renderer/client';
 import type { ParseError } from '@iconoglott/renderer';
 
 // Semantic classification for syntax highlighting (presentation layer only)
-const KEYWORDS = new Set(['canvas', 'group', 'stack', 'row']);
-const SHAPES = new Set(['rect', 'circle', 'ellipse', 'line', 'path', 'polygon', 'text', 'image']);
+const KEYWORDS = new Set(['canvas', 'group', 'stack', 'row', 'graph', 'node', 'edge']);
+const SHAPES = new Set(['rect', 'circle', 'ellipse', 'line', 'path', 'polygon', 'text', 'image', 'arc', 'curve', 'diamond']);
 const PROPERTIES = new Set([
   'at', 'size', 'radius', 'from', 'to', 'fill', 'stroke', 'opacity', 'corner',
-  'shadow', 'gradient', 'blur', 'font', 'bold', 'italic', 'center', 'end',
-  'translate', 'rotate', 'scale', 'origin', 'width', 'gap', 'vertical', 'horizontal',
-  'linear', 'radial', 'd', 'points', 'href'
+  'shadow', 'gradient', 'blur', 'font', 'bold', 'italic', 'center', 'end', 'middle',
+  'translate', 'rotate', 'scale', 'origin', 'width', 'height', 'gap', 'vertical', 'horizontal',
+  'linear', 'radial', 'd', 'points', 'href', 'label', 'shape', 'spacing', 'curved', 'straight',
+  'orthogonal', 'hierarchical', 'force', 'grid', 'tree', 'manual', 'justify', 'align', 'wrap',
+  'start', 'smooth', 'sharp', 'closed', 'padding', 'anchor', 'auto'
 ]);
 
-const DEFAULT_CODE = `// Iconoglott Visual DSL
-// Try the shapes and styles below!
+const DEFAULT_CODE = `// Iconoglott — Visual DSL for Vector Graphics
+// This graph shows how the rendering pipeline works
 
-canvas giant fill #0d1117
+canvas giant fill #0a0f1a
 
-// Variables for reusable colors
-$accent = #f97316
-$cyan = #22d3ee
-$purple = #a855f7
+// Color palette
+$bg = #0a0f1a
+$panel = #151d2e
+$accent = #10b981
+$blue = #3b82f6
+$purple = #8b5cf6
+$rose = #f43f5e
+$amber = #f59e0b
+$cyan = #06b6d4
+$text = #e2e8f0
 
-// Rectangle with gradient and shadow
-rect at 80,80 size 200x140
-  gradient linear $accent $purple 135
-  corner 16
-  shadow 0,12 20 #0004
+// ═══════════════════════════════════════════════
+// ICONOGLOTT ARCHITECTURE GRAPH
+// ═══════════════════════════════════════════════
 
-// Circle with radial gradient
-circle at 420,160 radius 70
-  gradient radial $cyan #0d1117
+graph hierarchical vertical spacing 65
+  // Input layer
+  node "DSL Source" at 256,35 size 100x36
+    shape rect
+    fill $blue
+    label "DSL Source"
+  
+  // Processing layer
+  node "Lexer" at 150,120 size 85x36
+    shape rect
+    fill $purple
+    label "Lexer"
+  
+  node "Parser" at 256,120 size 85x36
+    shape rect
+    fill $purple
+    label "Parser"
+  
+  node "Symbols" at 362,120 size 85x36
+    shape rect
+    fill $purple
+    label "Symbols"
+  
+  // AST layer
+  node "AST" at 256,205 size 90x36
+    shape diamond
+    fill $accent
+    label "AST"
+  
+  // Render layer
+  node "Layout" at 150,290 size 85x36
+    shape rect
+    fill $amber
+    label "Layout"
+  
+  node "Render" at 256,290 size 85x36
+    shape rect
+    fill $amber
+    label "Render"
+  
+  node "Cache" at 362,290 size 85x36
+    shape ellipse
+    fill $rose
+    label "Cache"
+  
+  // Output
+  node "SVG" at 256,375 size 90x36
+    shape rect
+    fill $cyan
+    label "SVG"
+  
+  // Edges - Pipeline flow
+  edge "DSL Source" -> "Lexer" curved $text 1.5
+  edge "DSL Source" -> "Parser" curved $text 1.5
+  edge "DSL Source" -> "Symbols" curved $text 1.5
+  edge "Lexer" -> "AST" curved $text 1.5
+  edge "Parser" -> "AST" curved $text 1.5
+  edge "Symbols" -> "AST" curved $text 1.5
+  edge "AST" -> "Layout" curved $text 1.5
+  edge "AST" -> "Render" curved $text 1.5
+  edge "AST" -> "Cache" curved $text 1.5
+  edge "Layout" -> "SVG" curved $text 1.5
+  edge "Render" -> "SVG" curved $text 1.5
+  edge "Cache" -> "Render" curved $rose 1
 
-// Ellipse shape
-ellipse at 600,300 radius 60,35
-  fill $purple
-  opacity 0.8
+// ═══════════════════════════════════════════════
+// FEATURE SHOWCASE
+// ═══════════════════════════════════════════════
 
-// Polygon (triangle)
-polygon points [200,400 280,280 360,400]
-  fill $cyan
-  stroke #fff 2
-
-// Line
-line from 450,400 to 650,280
-  stroke $accent 3
-
-// Text with styling
-text "Iconoglott" at 80,520
-  font "Space Grotesk" 32
+// Title
+text "Iconoglott" at 30,460
+  font "Space Grotesk" 28
   fill #fff
   bold
 
-// Grouped elements
-group "button"
-  rect at 500,450 size 140x48
-    fill $accent
-    corner 24
-  text "Explore →" at 570,480
-    font "Space Grotesk" 15
-    fill #fff
-    center
+text "Visual DSL for Vector Graphics" at 30,488
+  font "Space Grotesk" 13
+  fill #64748b
 
-// Layout example
-stack gap 12 at 80,300
-  rect size 160x30
-    fill #21262d
-    corner 6
-  rect size 140x30
-    fill #21262d
-    corner 6
-  rect size 120x30
-    fill #21262d
-    corner 6`;
+// Feature cards using layout
+row gap 16 at 30,510
+  // Variables card
+  rect size 110x55
+    fill $panel
+    corner 8
+    stroke #1e293b 1
+  
+  // Layouts card  
+  rect size 110x55
+    fill $panel
+    corner 8
+    stroke #1e293b 1
+  
+  // Graphs card
+  rect size 110x55
+    fill $panel
+    corner 8
+    stroke #1e293b 1
+  
+  // Transforms card
+  rect size 110x55
+    fill $panel
+    corner 8
+    stroke #1e293b 1
+
+// Card labels
+text "$vars" at 62,533
+  font "JetBrains Mono" 11
+  fill $accent
+  center
+
+text "layouts" at 172,533
+  font "JetBrains Mono" 11
+  fill $blue
+  center
+
+text "graphs" at 282,533
+  font "JetBrains Mono" 11
+  fill $purple
+  center
+
+text "transforms" at 395,533
+  font "JetBrains Mono" 11
+  fill $amber
+  center
+
+// Card descriptions
+text "Reusable colors" at 62,550
+  font "Space Grotesk" 9
+  fill #64748b
+  center
+
+text "Stack & row" at 172,550
+  font "Space Grotesk" 9
+  fill #64748b
+  center
+
+text "Nodes & edges" at 282,550
+  font "Space Grotesk" 9
+  fill #64748b
+  center
+
+text "Rotate & scale" at 395,550
+  font "Space Grotesk" 9
+  fill #64748b
+  center
+
+// Decorative elements
+circle at 480,470 radius 25
+  gradient radial #10b981 #0a0f1a
+  opacity 0.6
+
+circle at 495,490 radius 15
+  gradient radial #3b82f6 #0a0f1a
+  opacity 0.4`;
 
 class IconoglottPlayground {
   private editor: HTMLTextAreaElement;
