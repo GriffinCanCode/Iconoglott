@@ -1,0 +1,6 @@
+---
+source: src/snapshot_tests.rs
+assertion_line: 64
+expression: scene.render_svg()
+---
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="100%" height="100%" fill="#fff"/><line x1="10" y1="10" x2="40" y2="40" stroke="#333" stroke-width="2"/></svg>

@@ -158,18 +158,19 @@ class TestE2EPropertyBased:
     """Property-based E2E tests."""
 
     @given(
-        st.integers(min_value=100, max_value=1000),
-        st.integers(min_value=100, max_value=1000),
+        st.sampled_from(['nano', 'micro', 'tiny', 'small', 'medium', 'large', 'xlarge', 'huge', 'massive', 'giant']),
         st.from_regex(r'#[0-9a-fA-F]{6}', fullmatch=True)
     )
     @settings(max_examples=20)
-    def test_canvas_roundtrip(self, w, h, bg):
+    def test_canvas_roundtrip(self, size, bg):
         """Canvas dimensions and background should roundtrip."""
-        source = f"canvas {w}x{h} fill {bg}"
+        sizes = {'nano': 16, 'micro': 24, 'tiny': 32, 'small': 48, 'medium': 64, 'large': 96, 'xlarge': 128, 'huge': 192, 'massive': 256, 'giant': 512}
+        source = f"canvas {size} fill {bg}"
         state = Interpreter().eval(source)
         svg = state.to_svg()
-        assert f'width="{w}"' in svg
-        assert f'height="{h}"' in svg
+        expected = sizes[size]
+        assert f'width="{expected}"' in svg
+        assert f'height="{expected}"' in svg
         assert bg.lower() in svg.lower()
 
     @given(

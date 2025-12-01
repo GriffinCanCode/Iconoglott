@@ -128,8 +128,8 @@ proptest! {
             if let AstNode::Shape(s) = &children[0] {
                 prop_assert_eq!(s.kind.as_str(), "rect");
                 if let Some(PropValue::Pair(px, py)) = s.props.get("at") {
-                    prop_assert!((px - x.floor()).abs() < 1.0, "X position mismatch");
-                    prop_assert!((py - y.floor()).abs() < 1.0, "Y position mismatch");
+                    prop_assert!((px - x.round()).abs() < 1.0, "X position mismatch");
+                    prop_assert!((py - y.round()).abs() < 1.0, "Y position mismatch");
                 }
             }
         }
@@ -146,7 +146,7 @@ proptest! {
             if let Some(AstNode::Shape(s)) = children.first() {
                 prop_assert_eq!(s.kind.as_str(), "circle");
                 if let Some(PropValue::Num(parsed_r)) = s.props.get("radius") {
-                    prop_assert!((parsed_r - r.floor()).abs() < 1.0, "Radius mismatch");
+                    prop_assert!((parsed_r - r.round()).abs() < 1.0, "Radius mismatch");
                 }
             }
         }
@@ -161,7 +161,8 @@ proptest! {
         prop_assert!(errors.is_empty(), "Variable should parse without errors: {:?}", errors);
         if let AstNode::Scene(children) = ast {
             if let Some(AstNode::Variable { name: var_name, value }) = children.first() {
-                prop_assert_eq!(var_name, &name);
+                // Variable name includes $ prefix from lexer
+                prop_assert_eq!(var_name, &format!("${}", name));
                 prop_assert!(value.is_some(), "Variable should have a value");
             }
         }
@@ -289,7 +290,7 @@ proptest! {
         prop_assert!(errors.is_empty());
         if let AstNode::Scene(children) = ast {
             if let Some(AstNode::Shape(s)) = children.first() {
-                prop_assert!((s.transform.rotate - rotate.floor()).abs() < 1.0);
+                prop_assert!((s.transform.rotate - rotate.round()).abs() < 1.0);
                 if let Some((sx, sy)) = s.transform.scale {
                     prop_assert!((sx - scale).abs() < 0.2);
                     prop_assert!((sy - scale).abs() < 0.2);

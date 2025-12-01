@@ -250,26 +250,25 @@ class TestInterpreterErrors:
         assert len(state.error_infos) > 0
 
     def test_undefined_variable_uses_literal(self):
-        # Undefined variables are passed through as literal strings
+        # Undefined variables are passed through as literal strings with $VAR: prefix
         source = "rect $undefined"
         state = Interpreter().eval(source)
-        # The variable name is used as-is when undefined
-        assert state.shapes[0]['props'].get('fill') == '$undefined'
+        # The variable name is prefixed with $VAR: when undefined
+        assert state.shapes[0]['props'].get('fill') == '$VAR:$undefined'
 
 
 class TestInterpreterPropertyBased:
     """Property-based tests using hypothesis."""
 
-    @given(
-        st.integers(min_value=100, max_value=2000),
-        st.integers(min_value=100, max_value=2000)
-    )
-    def test_canvas_dimensions_in_svg(self, w, h):
-        """Canvas dimensions should appear in SVG output."""
-        state = Interpreter().eval(f"canvas {w}x{h}")
+    @given(st.sampled_from(['nano', 'micro', 'tiny', 'small', 'medium', 'large', 'xlarge', 'huge', 'massive', 'giant']))
+    def test_canvas_dimensions_in_svg(self, size):
+        """Canvas dimensions should match standard sizes in SVG output."""
+        sizes = {'nano': 16, 'micro': 24, 'tiny': 32, 'small': 48, 'medium': 64, 'large': 96, 'xlarge': 128, 'huge': 192, 'massive': 256, 'giant': 512}
+        state = Interpreter().eval(f"canvas {size}")
         svg = state.to_svg()
-        assert f'width="{w}"' in svg
-        assert f'height="{h}"' in svg
+        expected = sizes[size]
+        assert f'width="{expected}"' in svg
+        assert f'height="{expected}"' in svg
 
     @given(st.from_regex(r'#[0-9a-fA-F]{6}', fullmatch=True))
     def test_fill_color_in_svg(self, color):

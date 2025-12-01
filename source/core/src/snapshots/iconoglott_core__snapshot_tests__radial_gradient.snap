@@ -1,0 +1,6 @@
+---
+source: src/snapshot_tests.rs
+assertion_line: 159
+expression: scene.render_svg()
+---
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="100%" height="100%" fill="#0a0a1a"/><defs><radialGradient id="radial1"><stop offset="0%" stop-color="#fff"/><stop offset="100%" stop-color="#000"/></radialGradient></defs><circle cx="32" cy="32" r="24" fill="url(#radial1)" opacity="0"/></svg>

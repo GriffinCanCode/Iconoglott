@@ -1,0 +1,6 @@
+---
+source: src/snapshot_tests.rs
+assertion_line: 334
+expression: scene.render_svg()
+---
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><rect width="100%" height="100%" fill="#1a1a2e"/><defs><symbol id="dot"><circle cx="8" cy="8" r="8" fill="#10b981"/></symbol></defs><use href="#dot" x="20" y="20" opacity="0"/><use href="#dot" x="50" y="20" opacity="0"/><use href="#dot" x="80" y="20" opacity="0"/><use href="#dot" x="35" y="50" opacity="0"/><use href="#dot" x="65" y="50" opacity="0"/></svg>

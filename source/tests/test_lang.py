@@ -13,8 +13,8 @@ class TestLexer:
         tokens = lexer.py_tokenize()
         assert tokens[0].ttype == rust.TokenType.Ident
         assert tokens[0].value == "canvas"
-        assert tokens[1].ttype == rust.TokenType.Pair
-        assert tokens[1].value == (800.0, 600.0)
+        assert tokens[1].ttype == rust.TokenType.Size
+        assert tokens[1].value == "giant"
 
     def test_tokenize_color(self):
         lexer = rust.Lexer("fill #ff0000")
