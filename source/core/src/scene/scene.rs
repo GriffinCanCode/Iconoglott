@@ -4,6 +4,7 @@
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use super::shape::{Circle, Ellipse, Image, Line, Path, Polygon, Rect, Text};
+use crate::CanvasSize;
 
 /// A renderable element in the scene
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -94,29 +95,37 @@ impl Filter {
     }
 }
 
-/// Scene container
-#[derive(Clone, Debug, Default)]
+/// Scene container using standardized sizes
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "python", pyclass)]
 pub struct Scene {
-    #[cfg_attr(feature = "python", pyo3(get, set))]
-    pub width: u32,
-    #[cfg_attr(feature = "python", pyo3(get, set))]
-    pub height: u32,
-    #[cfg_attr(feature = "python", pyo3(get, set))]
+    pub size: CanvasSize,
     pub background: String,
     elements: Vec<Element>,
     gradients: Vec<Gradient>,
     filters: Vec<Filter>,
 }
 
+impl Default for Scene {
+    fn default() -> Self {
+        Self { size: CanvasSize::Medium, background: "#fff".into(), elements: Vec::new(), gradients: Vec::new(), filters: Vec::new() }
+    }
+}
+
 #[cfg(feature = "python")]
 #[pymethods]
 impl Scene {
     #[new]
-    #[pyo3(signature = (width=800, height=600, background="#fff".to_string()))]
-    fn py_new(width: u32, height: u32, background: String) -> Self {
-        Self { width, height, background, elements: Vec::new(), gradients: Vec::new(), filters: Vec::new() }
+    #[pyo3(signature = (size=CanvasSize::Medium, background="#fff".to_string()))]
+    fn py_new(size: CanvasSize, background: String) -> Self {
+        Self { size, background, elements: Vec::new(), gradients: Vec::new(), filters: Vec::new() }
     }
+    #[getter] fn get_size(&self) -> CanvasSize { self.size }
+    #[setter] fn set_size(&mut self, v: CanvasSize) { self.size = v; }
+    #[getter] fn get_width(&self) -> u32 { self.width() }
+    #[getter] fn get_height(&self) -> u32 { self.height() }
+    #[getter] fn get_background(&self) -> String { self.background.clone() }
+    #[setter] fn set_background(&mut self, v: String) { self.background = v; }
     fn add_rect(&mut self, rect: Rect) { self.elements.push(Element::Rect(rect)); }
     fn add_circle(&mut self, circle: Circle) { self.elements.push(Element::Circle(circle)); }
     fn add_ellipse(&mut self, ellipse: Ellipse) { self.elements.push(Element::Ellipse(ellipse)); }
@@ -133,9 +142,14 @@ impl Scene {
 }
 
 impl Scene {
-    pub fn new_internal(width: u32, height: u32, background: String) -> Self {
-        Self { width, height, background, elements: Vec::new(), gradients: Vec::new(), filters: Vec::new() }
+    pub fn new(size: CanvasSize, background: String) -> Self {
+        Self { size, background, elements: Vec::new(), gradients: Vec::new(), filters: Vec::new() }
     }
+    
+    #[inline] pub fn width(&self) -> u32 { self.size.pixels() }
+    #[inline] pub fn height(&self) -> u32 { self.size.pixels() }
+    #[inline] pub fn dimensions(&self) -> (u32, u32) { self.size.dimensions() }
+    
     pub fn push(&mut self, el: Element) { self.elements.push(el); }
     #[inline] pub fn elements(&self) -> &[Element] { &self.elements }
     #[inline] pub fn elements_mut(&mut self) -> &mut Vec<Element> { &mut self.elements }
@@ -143,7 +157,8 @@ impl Scene {
     #[inline] pub fn filters(&self) -> &[Filter] { &self.filters }
 
     pub fn render_svg(&self) -> String {
-        let mut svg = format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}">"#, self.width, self.height);
+        let (w, h) = self.dimensions();
+        let mut svg = format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}">"#, w, h);
         svg.push_str(&format!(r#"<rect width="100%" height="100%" fill="{}"/>"#, self.background));
         if !self.gradients.is_empty() || !self.filters.is_empty() {
             svg.push_str("<defs>");
@@ -155,13 +170,15 @@ impl Scene {
         svg.push_str("</svg>");
         svg
     }
-    pub fn to_json(&self) -> String { serde_json::json!({"width": self.width, "height": self.height, "background": self.background, "element_count": self.elements.len()}).to_string() }
+    pub fn to_json(&self) -> String { 
+        let (w, h) = self.dimensions();
+        serde_json::json!({"size": self.size.to_string(), "width": w, "height": h, "background": self.background, "element_count": self.elements.len()}).to_string() 
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::shape::Style;
-    #[test] fn test_scene_new() { let s = Scene::new_internal(800, 600, "#fff".into()); assert_eq!((s.width, s.height), (800, 600)); }
-    #[test] fn test_scene_svg() { let s = Scene::new_internal(100, 100, "#000".into()); assert!(s.render_svg().contains("</svg>")); }
+    #[test] fn test_scene_new() { let s = Scene::new(CanvasSize::Large, "#fff".into()); assert_eq!(s.dimensions(), (96, 96)); }
+    #[test] fn test_scene_svg() { let s = Scene::new(CanvasSize::Small, "#000".into()); assert!(s.render_svg().contains("</svg>")); assert!(s.render_svg().contains("48")); }
 }

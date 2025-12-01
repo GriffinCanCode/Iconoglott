@@ -129,7 +129,7 @@ impl DiffResult {
 
 /// Diff two scenes using indexed reconciliation
 pub fn diff(old: &Scene, new: &Scene) -> DiffResult {
-    if old.width != new.width || old.height != new.height || old.background != new.background {
+    if old.size != new.size || old.background != new.background {
         return DiffResult::full_redraw();
     }
 
@@ -302,9 +302,10 @@ pub type Patch = DiffOp;
 mod tests {
     use super::*;
     use crate::scene::{Circle, Rect};
+    use crate::CanvasSize;
 
-    fn make_scene(w: u32, h: u32, bg: &str) -> Scene {
-        Scene::new_internal(w, h, bg.to_string())
+    fn make_scene(size: CanvasSize, bg: &str) -> Scene {
+        Scene::new(size, bg.to_string())
     }
 
     #[test]
@@ -323,21 +324,21 @@ mod tests {
 
     #[test]
     fn test_identical_scenes() {
-        let s1 = make_scene(800, 600, "#fff");
-        let s2 = make_scene(800, 600, "#fff");
+        let s1 = make_scene(CanvasSize::Large, "#fff");
+        let s2 = make_scene(CanvasSize::Large, "#fff");
         assert!(diff(&s1, &s2).is_empty());
     }
 
     #[test]
     fn test_canvas_change_triggers_redraw() {
-        let s1 = make_scene(800, 600, "#fff");
-        let s2 = make_scene(1024, 600, "#fff");
+        let s1 = make_scene(CanvasSize::Large, "#fff");
+        let s2 = make_scene(CanvasSize::Giant, "#fff");
         assert!(diff(&s1, &s2).needs_full_redraw());
     }
 
     #[test]
     fn test_indexed_scene_empty() {
-        let scene = make_scene(800, 600, "#fff");
+        let scene = make_scene(CanvasSize::Large, "#fff");
         let indexed = IndexedScene::from_scene(&scene);
         assert!(indexed.is_empty());
     }

@@ -37,6 +37,8 @@ use pyo3::prelude::*;
 #[cfg(feature = "python")]
 #[pymodule]
 fn iconoglott_core(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    // Canvas sizing
+    m.add_class::<dsl::CanvasSize>()?;
     // Lexer & Parser (core DSL processing)
     m.add_class::<dsl::TokenType>()?;
     m.add_class::<dsl::Token>()?;
@@ -85,7 +87,7 @@ pub use font::{get_metrics, measure_text, FontMetrics, TextMetrics};
 
 // Lexer & Parser (always available) - re-export from dsl module
 pub use dsl::{
-    AstCanvas, AstNode, AstShape, AstStyle, AstTransform,
+    AstCanvas, AstNode, AstShape, AstStyle, AstTransform, CanvasSize,
     GradientDef, Lexer, ParseError, Parser, PropValue, ShadowDef,
     Token, TokenType, TokenValue,
 };
