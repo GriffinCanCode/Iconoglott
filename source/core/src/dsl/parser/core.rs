@@ -1,6 +1,7 @@
 //! Parser for the iconoglott DSL
 //!
 //! Parses token stream into AST with error collection and recovery.
+//! Uses synchronization tokens (Newline, Dedent) for error recovery.
 
 use super::ast::*;
 use super::super::lexer::{CanvasSize, Token, TokenType, TokenValue};
@@ -8,6 +9,12 @@ use std::collections::{HashMap, HashSet};
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+
+/// Synchronization tokens for error recovery (Newline, Dedent, EOF)
+pub const SYNC_TOKENS: &[TokenType] = &[TokenType::Newline, TokenType::Dedent, TokenType::Eof];
+
+/// Statement-starting tokens (used to find recovery points)
+pub const STMT_STARTERS: &[TokenType] = &[TokenType::Ident, TokenType::Var];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Parser Constants
@@ -59,6 +66,10 @@ pub struct Parser {
     pos: usize,
     pub(crate) variables: HashMap<String, TokenValue>,
     pub errors: Vec<ParseError>,
+    /// Track indent depth for recovery
+    indent_depth: usize,
+    /// Panic mode flag - true when recovering from error
+    panic_mode: bool,
 }
 
 impl Parser {
@@ -68,6 +79,8 @@ impl Parser {
             pos: 0,
             variables: HashMap::new(),
             errors: Vec::new(),
+            indent_depth: 0,
+            panic_mode: false,
         }
     }
 
@@ -79,8 +92,20 @@ impl Parser {
         self.tokens.get(self.pos + 1)
     }
 
+    #[allow(dead_code)]
+    pub(crate) fn peek_n(&self, n: usize) -> Option<&Token> {
+        self.tokens.get(self.pos + n)
+    }
+
     pub(crate) fn advance(&mut self) -> Option<&Token> {
         let tok = self.tokens.get(self.pos);
+        if let Some(t) = tok {
+            match t.ttype {
+                TokenType::Indent => self.indent_depth += 1,
+                TokenType::Dedent => self.indent_depth = self.indent_depth.saturating_sub(1),
+                _ => {}
+            }
+        }
         self.pos += 1;
         tok
     }
@@ -106,10 +131,99 @@ impl Parser {
         tok.value.clone()
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Error Handling & Recovery
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Record an error at current position
+    #[allow(dead_code)]
     pub(crate) fn error(&mut self, msg: &str) {
-        let (line, col) = self.current().map(|t| (t.line, t.col)).unwrap_or((0, 0));
-        self.errors.push(ParseError { message: msg.into(), line, col });
+        self.error_at_current(msg, ErrorKind::UnexpectedToken, None);
     }
+
+    /// Record error with full details at current token
+    fn error_at_current(&mut self, msg: &str, kind: ErrorKind, suggestion: Option<&str>) {
+        if self.panic_mode { return; } // Suppress cascade errors
+        
+        let (line, col) = self.current().map(|t| (t.line, t.col)).unwrap_or((0, 0));
+        let mut err = ParseError::new(msg, kind, line, col);
+        if let Some(s) = suggestion { err = err.with_suggestion(s); }
+        self.errors.push(err);
+    }
+
+    /// Record error and immediately synchronize to recover
+    fn error_and_sync(&mut self, msg: &str, kind: ErrorKind, suggestion: Option<&str>) {
+        self.error_at_current(msg, kind, suggestion);
+        self.synchronize();
+    }
+
+    /// Enter panic mode and skip to next synchronization point
+    fn synchronize(&mut self) {
+        self.panic_mode = true;
+        
+        // Skip to next newline/dedent at current indent level or statement starter
+        while let Some(tok) = self.current() {
+            if tok.ttype == TokenType::Eof { break; }
+            
+            // Found sync token - exit panic mode after it
+            if SYNC_TOKENS.contains(&tok.ttype) {
+                if tok.ttype == TokenType::Newline {
+                    self.advance();
+                    self.skip_newlines();
+                    
+                    // Check if next token could start a statement
+                    if self.matches(STMT_STARTERS) {
+                        self.panic_mode = false;
+                        return;
+                    }
+                } else if tok.ttype == TokenType::Dedent {
+                    // Don't consume dedent - let caller handle block end
+                    self.panic_mode = false;
+                    return;
+                }
+            }
+            self.advance();
+        }
+        self.panic_mode = false;
+    }
+
+    /// Synchronize to end of current block (consume until dedent or eof)
+    #[allow(dead_code)]
+    fn sync_to_block_end(&mut self) {
+        while let Some(tok) = self.current() {
+            match tok.ttype {
+                TokenType::Dedent => { self.advance(); break; }
+                TokenType::Eof => break,
+                _ => { self.advance(); }
+            }
+        }
+    }
+
+    /// Synchronize to end of current line
+    fn sync_to_line_end(&mut self) {
+        while let Some(tok) = self.current() {
+            if matches!(tok.ttype, TokenType::Newline | TokenType::Eof | TokenType::Dedent) { break; }
+            self.advance();
+        }
+    }
+
+    /// Try to consume expected token, record error if not found
+    #[allow(dead_code)]
+    fn expect(&mut self, expected: TokenType, msg: &str) -> bool {
+        if self.matches(&[expected]) {
+            self.advance();
+            true
+        } else {
+            self.error_at_current(msg, ErrorKind::MissingToken, None);
+            false
+        }
+    }
+
+    /// Check if errors occurred
+    pub fn has_errors(&self) -> bool { !self.errors.is_empty() }
+
+    /// Get error count
+    pub fn error_count(&self) -> usize { self.errors.len() }
 
     /// Parse the token stream into an AST
     pub fn parse(&mut self) -> AstNode {
@@ -136,14 +250,23 @@ impl Parser {
             return self.parse_variable();
         }
 
+        // Handle unexpected token at statement start
         if tok.ttype != TokenType::Ident {
-            self.advance();
+            let ttype = tok.ttype;
+            self.error_and_sync(
+                &format!("Expected command, found {:?}", ttype),
+                ErrorKind::UnexpectedToken,
+                Some("Statements should start with a command like 'rect', 'circle', 'canvas', etc.")
+            );
             return None;
         }
 
         let cmd = match &tok.value {
             TokenValue::Str(s) => s.clone(),
-            _ => return None,
+            _ => {
+                self.error_and_sync("Invalid command token", ErrorKind::UnexpectedToken, None);
+                return None;
+            }
         };
         self.advance();
 
@@ -156,10 +279,42 @@ impl Parser {
             "edge" => Some(AstNode::Shape(self.parse_edge_as_shape())),
             _ if SHAPES.contains(cmd.as_str()) => Some(self.parse_shape(&cmd)),
             _ => {
-                self.error(&format!("Unknown command: {}", cmd));
+                // Unknown command - suggest similar valid commands
+                let suggestion = Self::suggest_command(&cmd);
+                self.error_at_current(
+                    &format!("Unknown command: '{}'", cmd),
+                    ErrorKind::UnknownCommand,
+                    suggestion.as_deref()
+                );
+                self.sync_to_line_end();
                 None
             }
         }
+    }
+
+    /// Suggest similar valid commands for typos
+    fn suggest_command(cmd: &str) -> Option<String> {
+        let all_cmds = ["canvas", "group", "stack", "row", "graph", "node", "edge",
+                        "rect", "circle", "ellipse", "line", "path", "polygon", 
+                        "text", "image", "arc", "curve", "diamond"];
+        
+        // Simple Levenshtein-style matching for common typos
+        let cmd_lower = cmd.to_lowercase();
+        for valid in all_cmds {
+            if cmd_lower.starts_with(&valid[..1.min(valid.len())]) && 
+               (cmd_lower.len() as i32 - valid.len() as i32).abs() <= 2 {
+                return Some(format!("Did you mean '{}'?", valid));
+            }
+        }
+        
+        // Check for prefix matches
+        for valid in all_cmds {
+            if valid.starts_with(&cmd_lower) || cmd_lower.starts_with(valid) {
+                return Some(format!("Did you mean '{}'?", valid));
+            }
+        }
+        
+        Some(format!("Valid commands: {}", all_cmds[..8].join(", ")))
     }
 
     fn parse_variable(&mut self) -> Option<AstNode> {
@@ -195,16 +350,31 @@ impl Parser {
                     if let Some(size) = CanvasSize::from_str(&name) {
                         canvas.size = size;
                     } else {
-                        self.error(&format!("Invalid canvas size '{}'. Valid sizes: {}", name, CanvasSize::all_names().join(", ")));
+                        self.error_at_current(
+                            &format!("Invalid canvas size '{}'", name),
+                            ErrorKind::InvalidValue,
+                            Some(&format!("Valid sizes: {}", CanvasSize::all_names().join(", ")))
+                        );
                     }
                 }
             }
         } else if self.matches(&[TokenType::Pair]) {
-            // Legacy support: emit error for raw dimensions
-            self.error(&format!("Raw pixel dimensions are not allowed. Use a standard size: {}", CanvasSize::all_names().join(", ")));
-            self.advance(); // consume the pair token
+            // Legacy support: emit error for raw dimensions but continue
+            self.error_at_current(
+                "Raw pixel dimensions not allowed",
+                ErrorKind::InvalidValue,
+                Some(&format!("Use a standard size: {}", CanvasSize::all_names().join(", ")))
+            );
+            self.advance(); // consume and recover
+        } else if !self.matches(&[TokenType::Ident, TokenType::Newline, TokenType::Eof]) {
+            self.error_at_current(
+                "Expected canvas size",
+                ErrorKind::MissingToken,
+                Some(&format!("Valid sizes: {}", CanvasSize::all_names().join(", ")))
+            );
         }
 
+        // Parse canvas properties with recovery
         while self.matches(&[TokenType::Ident, TokenType::Size]) {
             let prop = self.current().and_then(|t| match &t.value {
                 TokenValue::Str(s) => Some(s.clone()),
@@ -212,16 +382,32 @@ impl Parser {
             });
             self.advance();
 
-            if let Some(p) = prop {
-                if p == "fill" {
-                    if let Some(tok) = self.current() {
-                        canvas.fill = match self.resolve(tok) {
-                            TokenValue::Str(s) => s,
-                            _ => canvas.fill,
-                        };
-                        self.advance();
+            match prop.as_deref() {
+                Some("fill") => {
+                    if self.matches(&[TokenType::Color, TokenType::Var, TokenType::Ident]) {
+                        if let Some(tok) = self.current() {
+                            if let TokenValue::Str(s) = self.resolve(tok) {
+                                canvas.fill = s;
+                            }
+                            self.advance();
+                        }
+                    } else {
+                        self.error_at_current(
+                            "Expected color value after 'fill'",
+                            ErrorKind::InvalidValue,
+                            Some("Use a hex color like #fff or #1a2b3c")
+                        );
                     }
                 }
+                Some(p) => {
+                    self.error_at_current(
+                        &format!("Unknown canvas property '{}'", p),
+                        ErrorKind::InvalidProperty,
+                        Some("Valid canvas properties: fill")
+                    );
+                    self.sync_to_line_end();
+                }
+                None => {}
             }
         }
 
@@ -334,6 +520,10 @@ impl Parser {
                 self.advance();
                 break;
             }
+            if tok.ttype == TokenType::Eof {
+                self.error_at_current("Unexpected end of file in graph block", ErrorKind::UnterminatedBlock, None);
+                break;
+            }
 
             self.skip_newlines();
             if self.matches(&[TokenType::Dedent]) {
@@ -352,28 +542,70 @@ impl Parser {
                     match cmd.as_str() {
                         "node" => graph.nodes.push(self.parse_graph_node()),
                         "edge" => graph.edges.push(self.parse_graph_edge()),
-                        "layout" if self.matches(&[TokenType::Ident]) => {
-                            if let Some(t) = self.advance() {
-                                if let TokenValue::Str(s) = &t.value {
-                                    if GRAPH_LAYOUTS.contains(s.as_str()) { graph.layout = s.clone(); }
+                        "layout" => {
+                            if self.matches(&[TokenType::Ident]) {
+                                let layout_val = self.advance().and_then(|t| {
+                                    if let TokenValue::Str(s) = &t.value { Some(s.clone()) } else { None }
+                                });
+                                if let Some(s) = layout_val {
+                                    if GRAPH_LAYOUTS.contains(s.as_str()) {
+                                        graph.layout = s;
+                                    } else {
+                                        self.error_at_current(
+                                            &format!("Invalid layout '{}'", s),
+                                            ErrorKind::InvalidValue,
+                                            Some(&format!("Valid layouts: {}", GRAPH_LAYOUTS.iter().copied().collect::<Vec<_>>().join(", ")))
+                                        );
+                                    }
                                 }
+                            } else {
+                                self.error_at_current("Expected layout name", ErrorKind::MissingToken, None);
                             }
                         }
-                        "direction" if self.matches(&[TokenType::Ident]) => {
-                            if let Some(t) = self.advance() {
-                                if let TokenValue::Str(s) = &t.value {
-                                    graph.direction = s.clone();
+                        "direction" => {
+                            if self.matches(&[TokenType::Ident]) {
+                                let dir_val = self.advance().and_then(|t| {
+                                    if let TokenValue::Str(s) = &t.value { Some(s.clone()) } else { None }
+                                });
+                                if let Some(s) = dir_val {
+                                    if s == "vertical" || s == "horizontal" {
+                                        graph.direction = s;
+                                    } else {
+                                        self.error_at_current(
+                                            &format!("Invalid direction '{}'", s),
+                                            ErrorKind::InvalidValue,
+                                            Some("Use 'vertical' or 'horizontal'")
+                                        );
+                                    }
                                 }
+                            } else {
+                                self.error_at_current("Expected direction value", ErrorKind::MissingToken, None);
                             }
                         }
-                        "spacing" if self.matches(&[TokenType::Number]) => {
-                            if let Some(t) = self.advance() {
-                                if let TokenValue::Num(n) = t.value { graph.spacing = n; }
+                        "spacing" => {
+                            if self.matches(&[TokenType::Number]) {
+                                if let Some(t) = self.advance() {
+                                    if let TokenValue::Num(n) = t.value { graph.spacing = n; }
+                                }
+                            } else {
+                                self.error_at_current("Expected number after 'spacing'", ErrorKind::MissingToken, None);
                             }
                         }
-                        _ => {}
+                        _ => {
+                            self.error_at_current(
+                                &format!("Unknown graph property '{}'", cmd),
+                                ErrorKind::InvalidProperty,
+                                Some("Valid graph properties: node, edge, layout, direction, spacing")
+                            );
+                            self.sync_to_line_end();
+                        }
                     }
                 } else {
+                    self.error_at_current(
+                        &format!("Unexpected {:?} in graph block", tok.ttype),
+                        ErrorKind::UnexpectedToken,
+                        None
+                    );
                     self.advance();
                 }
             }
@@ -814,6 +1046,14 @@ impl Parser {
                 self.advance();
                 break;
             }
+            if tok.ttype == TokenType::Eof {
+                self.error_at_current(
+                    "Unexpected end of file in block",
+                    ErrorKind::UnterminatedBlock,
+                    Some("Block was never closed")
+                );
+                break;
+            }
 
             self.skip_newlines();
             if self.matches(&[TokenType::Dedent]) {
@@ -829,8 +1069,9 @@ impl Parser {
                     };
 
                     if SHAPES.contains(prop.as_str()) {
-                        if let Some(AstNode::Shape(child)) = self.parse_statement() {
-                            shape.children.push(child);
+                        match self.parse_statement() {
+                            Some(AstNode::Shape(child)) => shape.children.push(child),
+                            _ => {} // Error already recorded, continue with next
                         }
                     } else if STYLE_PROPS.contains(prop.as_str()) {
                         self.parse_style_prop(shape);
@@ -856,13 +1097,45 @@ impl Parser {
                         self.advance();
                         shape.props.insert("points".into(), PropValue::Points(self.parse_points()));
                     } else {
+                        // Unknown property in block - report and skip line
+                        self.error_at_current(
+                            &format!("Unknown property '{}' in {} block", prop, shape.kind),
+                            ErrorKind::InvalidProperty,
+                            Self::suggest_property(&prop, &shape.kind).as_deref()
+                        );
                         self.advance();
+                        self.sync_to_line_end();
                     }
                 } else {
+                    // Unexpected token in block
+                    let ttype = tok.ttype;
+                    self.error_at_current(
+                        &format!("Unexpected {:?} in block", ttype),
+                        ErrorKind::UnexpectedToken,
+                        Some("Expected property name or nested shape")
+                    );
                     self.advance();
                 }
             }
         }
+    }
+
+    /// Suggest similar property names
+    fn suggest_property(prop: &str, kind: &str) -> Option<String> {
+        let all_props: Vec<&str> = STYLE_PROPS.iter()
+            .chain(TEXT_PROPS.iter())
+            .chain(TRANSFORM_PROPS.iter())
+            .copied()
+            .collect();
+        
+        let prop_lower = prop.to_lowercase();
+        for valid in &all_props {
+            if valid.starts_with(&prop_lower) || prop_lower.starts_with(*valid) {
+                return Some(format!("Did you mean '{}'?", valid));
+            }
+        }
+        
+        Some(format!("Valid {} properties: fill, stroke, opacity, transform, etc.", kind))
     }
 
     fn parse_style_prop(&mut self, shape: &mut AstShape) {
@@ -1130,19 +1403,46 @@ impl Parser {
 
     pub(crate) fn parse_points(&mut self) -> Vec<(f64, f64)> {
         let mut points = Vec::new();
+        
+        if !self.matches(&[TokenType::LBracket]) {
+            self.error_at_current("Expected '[' to start points list", ErrorKind::MissingToken, None);
+            return points;
+        }
         self.advance(); // consume [
 
         while let Some(tok) = self.current() {
-            if tok.ttype == TokenType::RBracket {
-                self.advance();
-                break;
-            }
-            if tok.ttype == TokenType::Pair {
-                if let TokenValue::Pair(a, b) = tok.value {
-                    points.push((a, b));
+            match tok.ttype {
+                TokenType::RBracket => {
+                    self.advance();
+                    break;
+                }
+                TokenType::Pair => {
+                    if let TokenValue::Pair(a, b) = tok.value {
+                        points.push((a, b));
+                    }
+                    self.advance();
+                }
+                TokenType::Eof => {
+                    self.error_at_current(
+                        "Unclosed points list",
+                        ErrorKind::UnterminatedBlock,
+                        Some("Add ']' to close the points list")
+                    );
+                    break;
+                }
+                TokenType::Newline => {
+                    // Allow newlines in points list
+                    self.advance();
+                }
+                _ => {
+                    self.error_at_current(
+                        &format!("Expected point pair (x,y), found {:?}", tok.ttype),
+                        ErrorKind::InvalidValue,
+                        Some("Points should be in format: [100,200 300,400]")
+                    );
+                    self.advance();
                 }
             }
-            self.advance();
         }
 
         points

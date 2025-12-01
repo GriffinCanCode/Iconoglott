@@ -13,6 +13,14 @@ fn parse_source(source: &str) -> AstNode {
     parser.parse()
 }
 
+fn parse_with_errors(source: &str) -> (AstNode, Vec<ParseError>) {
+    let mut lexer = Lexer::new(source);
+    let tokens = lexer.tokenize();
+    let mut parser = Parser::new(tokens);
+    let ast = parser.parse();
+    (ast, parser.errors)
+}
+
 #[test]
 fn test_empty_source() {
     let ast = parse_source("");
@@ -136,6 +144,129 @@ fn test_curve_sharp() {
         } else {
             panic!("Expected Shape");
         }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Error Recovery Tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_error_recovery_unknown_command() {
+    let (ast, errors) = parse_with_errors("foobar\nrect at 100,100");
+    
+    // Should have one error for unknown command
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].kind, ErrorKind::UnknownCommand);
+    assert!(errors[0].message.contains("foobar"));
+    
+    // Should still parse the valid rect
+    if let AstNode::Scene(children) = ast {
+        assert_eq!(children.len(), 1);
+        if let AstNode::Shape(s) = &children[0] {
+            assert_eq!(s.kind, "rect");
+        }
+    }
+}
+
+#[test]
+fn test_error_recovery_multiple_errors() {
+    let (ast, errors) = parse_with_errors("badcmd\nrect at 100,100\nanotherbad\ncircle 50");
+    
+    // Should collect multiple errors
+    assert_eq!(errors.len(), 2);
+    assert!(errors.iter().all(|e| e.kind == ErrorKind::UnknownCommand));
+    
+    // Should parse both valid shapes
+    if let AstNode::Scene(children) = ast {
+        assert_eq!(children.len(), 2);
+        assert!(matches!(&children[0], AstNode::Shape(s) if s.kind == "rect"));
+        assert!(matches!(&children[1], AstNode::Shape(s) if s.kind == "circle"));
+    }
+}
+
+#[test]
+fn test_error_recovery_invalid_canvas_size() {
+    let (ast, errors) = parse_with_errors("canvas invalidsize\nrect at 50,50");
+    
+    // Should have error for invalid size
+    assert!(!errors.is_empty());
+    
+    // Should still parse with default canvas and the rect
+    if let AstNode::Scene(children) = ast {
+        assert!(children.len() >= 1);
+    }
+}
+
+#[test]
+fn test_error_recovery_block_with_errors() {
+    let (ast, errors) = parse_with_errors("rect at 100,100\n  fill #ff0\n  badprop value\n  stroke #000");
+    
+    // Should have error for unknown property
+    assert!(!errors.is_empty());
+    assert!(errors.iter().any(|e| e.kind == ErrorKind::InvalidProperty));
+    
+    // Should still parse valid properties
+    if let AstNode::Scene(children) = ast {
+        if let AstNode::Shape(s) = &children[0] {
+            assert_eq!(s.style.fill, Some("#ff0".into()));
+            assert_eq!(s.style.stroke, Some("#000".into()));
+        }
+    }
+}
+
+#[test]
+fn test_error_recovery_graph_block() {
+    let (ast, errors) = parse_with_errors("graph\n  node \"A\"\n  badcmd\n  node \"B\"");
+    
+    // Should have error for bad command in graph
+    assert!(!errors.is_empty());
+    
+    // Should parse both valid nodes
+    if let AstNode::Scene(children) = ast {
+        if let AstNode::Graph(g) = &children[0] {
+            assert_eq!(g.nodes.len(), 2);
+        }
+    }
+}
+
+#[test]
+fn test_error_has_suggestion() {
+    let (_, errors) = parse_with_errors("rekt at 100,100"); // typo: rekt instead of rect
+    
+    assert!(!errors.is_empty());
+    // Should have a suggestion
+    assert!(errors[0].suggestion.is_some());
+}
+
+#[test]
+fn test_error_spans() {
+    let (_, errors) = parse_with_errors("rect at 100,100\nbadcommand");
+    
+    assert!(!errors.is_empty());
+    // Error should be on line 1 (0-indexed)
+    assert_eq!(errors[0].line, 1);
+    assert_eq!(errors[0].span.start_line, 1);
+}
+
+#[test]
+fn test_error_codes() {
+    let (_, errors) = parse_with_errors("unknowncmd");
+    
+    assert!(!errors.is_empty());
+    assert_eq!(errors[0].kind.code(), "E002"); // UnknownCommand
+}
+
+#[test]
+fn test_unclosed_points_recovery() {
+    let (ast, errors) = parse_with_errors("polygon points [100,100 200,200\nrect at 50,50");
+    
+    // Should have error for unclosed points
+    assert!(!errors.is_empty());
+    
+    // Should still attempt to parse subsequent content
+    if let AstNode::Scene(children) = ast {
+        assert!(!children.is_empty());
     }
 }
 

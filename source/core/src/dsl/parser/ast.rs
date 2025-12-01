@@ -3,6 +3,7 @@
 use super::super::lexer::{CanvasSize, TokenValue};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use ts_rs::TS;
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -12,7 +13,8 @@ use pyo3::prelude::*;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Style properties for shapes
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct AstStyle {
     pub fill: Option<String>,
@@ -27,7 +29,8 @@ pub struct AstStyle {
 }
 
 /// Extended style with shadow/gradient (separate for Python compat)
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct FullStyle {
     pub base: AstStyle,
     pub shadow: Option<ShadowDef>,
@@ -55,7 +58,8 @@ impl AstStyle {
 }
 
 /// Shadow definition
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct ShadowDef {
     pub x: f64,
@@ -75,7 +79,8 @@ impl ShadowDef {
 }
 
 /// Gradient definition
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct GradientDef {
     pub gtype: String, // "linear" or "radial"
@@ -95,7 +100,8 @@ impl GradientDef {
 }
 
 /// Transform properties
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass)]
 pub struct AstTransform {
     pub translate: Option<(f64, f64)>,
@@ -105,7 +111,8 @@ pub struct AstTransform {
 }
 
 /// Node definition for graphs/flowcharts
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct GraphNode {
     pub id: String,
@@ -131,7 +138,8 @@ impl GraphNode {
 }
 
 /// Edge/connector between nodes
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct GraphEdge {
     pub from: String,
@@ -157,7 +165,8 @@ impl GraphEdge {
 }
 
 /// Graph container with layout
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct AstGraph {
     pub layout: String,      // hierarchical, force, grid, tree, manual
@@ -208,7 +217,8 @@ impl AstTransform {
 }
 
 /// Canvas definition using standardized sizes
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct AstCanvas {
     pub size: CanvasSize,
@@ -244,7 +254,8 @@ impl AstCanvas {
 }
 
 /// Property value types
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum PropValue {
     None,
     Str(String),
@@ -258,7 +269,8 @@ impl Default for PropValue {
 }
 
 /// Shape in the AST
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass)]
 pub struct AstShape {
     pub kind: String,
@@ -327,7 +339,8 @@ impl AstShape {
 }
 
 /// AST node types
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum AstNode {
     Scene(Vec<AstNode>),
     Canvas(AstCanvas),
@@ -336,20 +349,109 @@ pub enum AstNode {
     Variable { name: String, value: Option<TokenValue> },
 }
 
-/// Parse error
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// Error severity levels
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[cfg_attr(feature = "python", pyclass)]
+pub enum ErrorSeverity {
+    Error,
+    Warning,
+    Hint,
+}
+
+/// Error categories for structured diagnostics
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[cfg_attr(feature = "python", pyclass)]
+pub enum ErrorKind {
+    UnexpectedToken,
+    UnknownCommand,
+    InvalidValue,
+    MissingToken,
+    InvalidIndentation,
+    UnterminatedBlock,
+    InvalidProperty,
+}
+
+impl ErrorKind {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::UnexpectedToken => "E001",
+            Self::UnknownCommand => "E002",
+            Self::InvalidValue => "E003",
+            Self::MissingToken => "E004",
+            Self::InvalidIndentation => "E005",
+            Self::UnterminatedBlock => "E006",
+            Self::InvalidProperty => "E007",
+        }
+    }
+}
+
+/// Source span for error locations
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[cfg_attr(feature = "python", pyclass(get_all))]
+pub struct Span {
+    pub start_line: usize,
+    pub start_col: usize,
+    pub end_line: usize,
+    pub end_col: usize,
+}
+
+impl Span {
+    pub fn point(line: usize, col: usize) -> Self {
+        Self { start_line: line, start_col: col, end_line: line, end_col: col + 1 }
+    }
+
+    pub fn range(start_line: usize, start_col: usize, end_line: usize, end_col: usize) -> Self {
+        Self { start_line, start_col, end_line, end_col }
+    }
+}
+
+/// Parse error with recovery context
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass(get_all))]
 pub struct ParseError {
     pub message: String,
     pub line: usize,
     pub col: usize,
+    pub kind: ErrorKind,
+    pub severity: ErrorSeverity,
+    pub span: Span,
+    pub suggestion: Option<String>,
+    pub recovered: bool,
+}
+
+impl ParseError {
+    pub fn new(message: impl Into<String>, kind: ErrorKind, line: usize, col: usize) -> Self {
+        Self {
+            message: message.into(),
+            line, col,
+            kind,
+            severity: ErrorSeverity::Error,
+            span: Span::point(line, col),
+            suggestion: None,
+            recovered: false,
+        }
+    }
+
+    pub fn with_span(mut self, span: Span) -> Self { self.span = span; self }
+    pub fn with_suggestion(mut self, s: impl Into<String>) -> Self { self.suggestion = Some(s.into()); self }
+    pub fn with_severity(mut self, sev: ErrorSeverity) -> Self { self.severity = sev; self }
+    pub fn as_recovered(mut self) -> Self { self.recovered = true; self }
 }
 
 #[cfg(feature = "python")]
 #[pymethods]
 impl ParseError {
     fn __repr__(&self) -> String {
-        format!("ParseError({:?}, {}:{})", self.message, self.line, self.col)
+        format!("ParseError[{}]({:?}, {}:{}{})", 
+            self.kind.code(), self.message, self.line, self.col,
+            self.suggestion.as_ref().map(|s| format!(", suggestion={:?}", s)).unwrap_or_default())
     }
+    
+    #[getter]
+    fn code(&self) -> &'static str { self.kind.code() }
 }
 

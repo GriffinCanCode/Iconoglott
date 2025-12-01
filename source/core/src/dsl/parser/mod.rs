@@ -20,6 +20,9 @@ pub use ast::{
     FullStyle, GradientDef, GraphEdge, GraphNode, ParseError, PropValue, ShadowDef,
 };
 
+// Re-export error types for diagnostics
+pub use ast::{ErrorKind, ErrorSeverity, Span};
+
 // Re-export parser
 pub use self::core::Parser;
 
