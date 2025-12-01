@@ -3,6 +3,7 @@
 //! Tokenizes DSL source into a stream of tokens with indentation tracking.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -11,7 +12,8 @@ use pyo3::prelude::*;
 use wasm_bindgen::prelude::*;
 
 /// Token types for lexical analysis
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass)]
 pub enum TokenType {
     Ident,
@@ -33,7 +35,8 @@ pub enum TokenType {
 }
 
 /// Standard canvas sizes (10-tier system)
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass)]
 #[cfg_attr(feature = "wasm", wasm_bindgen::prelude::wasm_bindgen)]
 pub enum CanvasSize {
@@ -105,7 +108,8 @@ impl TokenType {
 }
 
 /// Token value variants
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum TokenValue {
     None,
     Str(String),
@@ -118,7 +122,8 @@ impl Default for TokenValue {
 }
 
 /// A single token from the lexer
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass)]
 pub struct Token {
     pub ttype: TokenType,

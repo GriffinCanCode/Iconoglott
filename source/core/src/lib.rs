@@ -22,6 +22,10 @@ pub mod scene;
 #[cfg(any(feature = "python", feature = "bench"))]
 pub mod render;
 
+// TypeScript type export (test only)
+#[cfg(all(test, any(feature = "python", feature = "bench")))]
+mod ts_export;
+
 // Platform bindings (WASM, etc.)
 #[cfg(feature = "wasm")]
 mod bindings;
@@ -87,8 +91,9 @@ pub use font::{get_metrics, measure_text, FontMetrics, TextMetrics};
 
 // Lexer & Parser (always available) - re-export from dsl module
 pub use dsl::{
-    AstCanvas, AstNode, AstShape, AstStyle, AstTransform, CanvasSize,
-    GradientDef, Lexer, ParseError, Parser, PropValue, ShadowDef,
+    AstCanvas, AstGraph, AstNode, AstShape, AstStyle, AstTransform, CanvasSize,
+    ErrorKind, ErrorSeverity, FullStyle, GradientDef, GraphEdge, GraphNode,
+    Lexer, ParseError, Parser, PropValue, ShadowDef, Span,
     Token, TokenType, TokenValue,
 };
 
@@ -101,7 +106,11 @@ pub mod id { pub use crate::hash::*; }
 pub use render::{DiffOp, DiffResult, IndexedScene};
 
 #[cfg(any(feature = "python", feature = "bench"))]
-pub use scene::{Circle, Color, Element, Ellipse, Filter, Gradient, Image, Line, Path, Polygon, Rect, Scene, Style, Text};
+pub use scene::{
+    ArrowType, Circle, Color, Diamond, Edge, EdgeStyle, Element, Ellipse,
+    Filter, Gradient, GraphContainer, Image, Line, Node, Path, Polygon,
+    Rect, Scene, Style, Text,
+};
 
 // Shape module alias for compatibility
 #[cfg(any(feature = "python", feature = "bench"))]

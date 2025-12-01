@@ -3,11 +3,13 @@
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use super::shape::{Circle, Diamond, Edge, Ellipse, Image, Line, Node, Path, Polygon, Rect, Text};
 use crate::CanvasSize;
 
 /// A renderable element in the scene
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum Element {
     Rect(Rect), Circle(Circle), Ellipse(Ellipse), Line(Line),
     Path(Path), Polygon(Polygon), Text(Text), Image(Image),
@@ -17,7 +19,8 @@ pub enum Element {
 }
 
 /// Container for graph elements with layout info
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct GraphContainer {
     pub layout: String,
     pub direction: String,
@@ -162,7 +165,8 @@ impl Element {
 }
 
 /// Gradient definition
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, rename = "GradientShape")]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct Gradient {
     pub id: String, pub kind: String, pub from_color: String, pub to_color: String, pub angle: f32,
@@ -189,7 +193,8 @@ impl Gradient {
 }
 
 /// Filter definition
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct Filter {
     pub id: String, pub kind: String, pub dx: f32, pub dy: f32, pub blur: f32, pub color: String,

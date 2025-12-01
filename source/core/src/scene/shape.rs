@@ -3,9 +3,11 @@
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// RGBA color representation
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct Color {
     pub r: u8,
@@ -48,7 +50,8 @@ impl Color {
 }
 
 /// Style properties for shapes
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, rename = "ShapeStyle")]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct Style {
     pub fill: Option<String>,
@@ -84,7 +87,8 @@ impl Style {
 }
 
 /// Rectangle primitive
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct Rect {
     pub x: f32, pub y: f32, pub w: f32, pub h: f32, pub rx: f32,
@@ -111,7 +115,8 @@ impl Rect {
 }
 
 /// Circle primitive
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct Circle {
     pub cx: f32, pub cy: f32, pub r: f32,
@@ -136,7 +141,8 @@ impl Circle {
 }
 
 /// Ellipse primitive
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct Ellipse {
     pub cx: f32, pub cy: f32, pub rx: f32, pub ry: f32,
@@ -161,7 +167,8 @@ impl Ellipse {
 }
 
 /// Line primitive
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct Line {
     pub x1: f32, pub y1: f32, pub x2: f32, pub y2: f32,
@@ -192,7 +199,8 @@ impl Line {
 }
 
 /// Path primitive
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct Path {
     pub d: String, pub style: Style, pub transform: Option<String>,
@@ -255,7 +263,8 @@ fn extract_numbers(d: &str) -> Vec<f32> {
 }
 
 /// Polygon primitive
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct Polygon {
     pub points: Vec<(f32, f32)>, pub style: Style, pub transform: Option<String>,
@@ -286,7 +295,8 @@ impl Polygon {
 }
 
 /// Text primitive
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, rename = "TextShape")]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct Text {
     pub x: f32, pub y: f32, pub content: String, pub font: String, pub size: f32,
@@ -328,7 +338,8 @@ impl Text {
 }
 
 /// Image primitive
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, rename = "ImageShape")]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct Image {
     pub x: f32, pub y: f32, pub w: f32, pub h: f32, pub href: String, pub transform: Option<String>,
@@ -355,7 +366,8 @@ fn html_escape(s: &str) -> String { s.replace('&', "&amp;").replace('<', "&lt;")
 #[inline] fn transform_attr(tf: &Option<String>) -> String { tf.as_ref().map_or(String::new(), |t| format!(r#" transform="{}""#, t)) }
 
 /// Diamond primitive (rotated rect for flowcharts)
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct Diamond {
     pub cx: f32, pub cy: f32, pub w: f32, pub h: f32,
@@ -385,7 +397,8 @@ impl Diamond {
 }
 
 /// Node for graph/flowchart (composite: shape + label)
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, rename = "GraphNodeShape")]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct Node {
     pub id: String,
@@ -456,7 +469,8 @@ impl Node {
 }
 
 /// Edge style enumeration
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum EdgeStyle { Straight, Curved, Orthogonal }
 
 impl Default for EdgeStyle {
@@ -464,7 +478,8 @@ impl Default for EdgeStyle {
 }
 
 /// Arrow type enumeration
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum ArrowType { None, Forward, Backward, Both }
 
 impl Default for ArrowType {
@@ -472,7 +487,8 @@ impl Default for ArrowType {
 }
 
 /// Edge/connector between nodes
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct Edge {
     pub from_id: String,

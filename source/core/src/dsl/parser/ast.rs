@@ -262,6 +262,8 @@ pub enum PropValue {
     Num(f64),
     Pair(f64, f64),
     Points(Vec<(f64, f64)>),
+    /// Unresolved variable reference (name, line, col)
+    VarRef(String, usize, usize),
 }
 
 impl Default for PropValue {
@@ -316,6 +318,7 @@ impl AstShape {
                 PropValue::Num(n) => n.into_py(py),
                 PropValue::Pair(a, b) => (*a, *b).into_py(py),
                 PropValue::Points(pts) => pts.clone().into_py(py),
+                PropValue::VarRef(name, _, _) => format!("${}", name).into_py(py),
             };
             dict.set_item(k, val).ok();
         }
@@ -371,6 +374,8 @@ pub enum ErrorKind {
     InvalidIndentation,
     UnterminatedBlock,
     InvalidProperty,
+    UndefinedVariable,
+    DuplicateVariable,
 }
 
 impl ErrorKind {
@@ -383,6 +388,8 @@ impl ErrorKind {
             Self::InvalidIndentation => "E005",
             Self::UnterminatedBlock => "E006",
             Self::InvalidProperty => "E007",
+            Self::UndefinedVariable => "E008",
+            Self::DuplicateVariable => "E009",
         }
     }
 }

@@ -1,6 +1,6 @@
 # Root Makefile - Iconoglott
 SHELL := /bin/bash
-.PHONY: all clean install dev test start stop killports lint build core
+.PHONY: all clean install dev test start stop killports lint build core ts-types
 
 ROOT_DIR := $(shell pwd)
 VENV := .venv
@@ -48,6 +48,12 @@ test-cov: install
 # Run Rust tests
 test-rust: core
 	@$(MAKE) -C source test-rust
+
+# Generate TypeScript types from Rust structs
+ts-types: core
+	@echo "Generating TypeScript types from Rust..."
+	@cd source/core && cargo test export_ts_bindings --features python -- --ignored
+	@echo "TypeScript types generated at distribution/npm/src/core/generated/"
 
 # Run TypeScript tests
 test-ts:
