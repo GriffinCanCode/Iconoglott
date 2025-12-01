@@ -264,178 +264,78 @@ class IconoglottClient {
   }
 }
 const DEFAULT_CODE = `// Iconoglott — Visual DSL for Vector Graphics
-// This graph shows how the rendering pipeline works
+// Flowchart demo using manual node positioning
 
 canvas giant fill #0a0f1a
 
 // Color palette
-$bg = #0a0f1a
-$panel = #151d2e
 $accent = #10b981
 $blue = #3b82f6
 $purple = #8b5cf6
-$rose = #f43f5e
 $amber = #f59e0b
 $cyan = #06b6d4
 $text = #e2e8f0
 
 // ═══════════════════════════════════════════════
-// ICONOGLOTT ARCHITECTURE GRAPH
+// TITLE
 // ═══════════════════════════════════════════════
 
-graph hierarchical vertical spacing 65
-  // Input layer
-  node "DSL Source" at 256,35 size 100x36
+text "Iconoglott" at 20,30
+  font "Space Grotesk" 22
+  fill #fff
+  bold
+
+text "DSL → SVG Pipeline" at 20,50
+  font "Space Grotesk" 11
+  fill #64748b
+
+// ═══════════════════════════════════════════════
+// FLOWCHART - Manual layout with exact positions
+// ═══════════════════════════════════════════════
+
+graph manual
+  node "Input" at 256,90 size 80x32
     shape rect
     fill $blue
-    label "DSL Source"
+    label "DSL"
   
-  // Processing layer
-  node "Lexer" at 150,120 size 85x36
+  node "Lexer" at 256,155 size 80x32
     shape rect
     fill $purple
     label "Lexer"
   
-  node "Parser" at 256,120 size 85x36
+  node "Parser" at 256,220 size 80x32
     shape rect
     fill $purple
     label "Parser"
   
-  node "Symbols" at 362,120 size 85x36
-    shape rect
-    fill $purple
-    label "Symbols"
-  
-  // AST layer
-  node "AST" at 256,205 size 90x36
+  node "AST" at 256,290 size 80x36
     shape diamond
     fill $accent
     label "AST"
   
-  // Render layer
-  node "Layout" at 150,290 size 85x36
-    shape rect
-    fill $amber
-    label "Layout"
-  
-  node "Render" at 256,290 size 85x36
+  node "Render" at 256,365 size 80x32
     shape rect
     fill $amber
     label "Render"
   
-  node "Cache" at 362,290 size 85x36
-    shape ellipse
-    fill $rose
-    label "Cache"
-  
-  // Output
-  node "SVG" at 256,375 size 90x36
+  node "SVG" at 256,430 size 80x32
     shape rect
     fill $cyan
     label "SVG"
   
-  // Edges - Pipeline flow
-  edge "DSL Source" -> "Lexer" curved $text 1.5
-  edge "DSL Source" -> "Parser" curved $text 1.5
-  edge "DSL Source" -> "Symbols" curved $text 1.5
-  edge "Lexer" -> "AST" curved $text 1.5
+  edge "Input" -> "Lexer" curved $text 1.5
+  edge "Lexer" -> "Parser" curved $text 1.5
   edge "Parser" -> "AST" curved $text 1.5
-  edge "Symbols" -> "AST" curved $text 1.5
-  edge "AST" -> "Layout" curved $text 1.5
   edge "AST" -> "Render" curved $text 1.5
-  edge "AST" -> "Cache" curved $text 1.5
-  edge "Layout" -> "SVG" curved $text 1.5
   edge "Render" -> "SVG" curved $text 1.5
-  edge "Cache" -> "Render" curved $rose 1
 
-// ═══════════════════════════════════════════════
-// FEATURE SHOWCASE
-// ═══════════════════════════════════════════════
-
-// Title
-text "Iconoglott" at 30,460
-  font "Space Grotesk" 28
-  fill #fff
-  bold
-
-text "Visual DSL for Vector Graphics" at 30,488
-  font "Space Grotesk" 13
-  fill #64748b
-
-// Feature cards using layout
-row gap 16 at 30,510
-  // Variables card
-  rect size 110x55
-    fill $panel
-    corner 8
-    stroke #1e293b 1
-  
-  // Layouts card  
-  rect size 110x55
-    fill $panel
-    corner 8
-    stroke #1e293b 1
-  
-  // Graphs card
-  rect size 110x55
-    fill $panel
-    corner 8
-    stroke #1e293b 1
-  
-  // Transforms card
-  rect size 110x55
-    fill $panel
-    corner 8
-    stroke #1e293b 1
-
-// Card labels
-text "$vars" at 62,533
-  font "JetBrains Mono" 11
-  fill $accent
-  center
-
-text "layouts" at 172,533
-  font "JetBrains Mono" 11
-  fill $blue
-  center
-
-text "graphs" at 282,533
-  font "JetBrains Mono" 11
-  fill $purple
-  center
-
-text "transforms" at 395,533
-  font "JetBrains Mono" 11
-  fill $amber
-  center
-
-// Card descriptions
-text "Reusable colors" at 62,550
-  font "Space Grotesk" 9
-  fill #64748b
-  center
-
-text "Stack & row" at 172,550
-  font "Space Grotesk" 9
-  fill #64748b
-  center
-
-text "Nodes & edges" at 282,550
-  font "Space Grotesk" 9
-  fill #64748b
-  center
-
-text "Rotate & scale" at 395,550
-  font "Space Grotesk" 9
-  fill #64748b
-  center
-
-// Decorative elements
-circle at 480,470 radius 25
+// Decorative accents
+circle at 450,60 radius 18
   gradient radial #10b981 #0a0f1a
   opacity 0.6
 
-circle at 495,490 radius 15
+circle at 470,80 radius 10
   gradient radial #3b82f6 #0a0f1a
   opacity 0.4`;
 new IconoglottClient();

@@ -141,6 +141,8 @@ class SceneState:
                     self._add_shape(scene, c, (0, 0))
             case 'layout':
                 self._add_layout(scene, props, children)
+            case 'graph':
+                self._add_graph_to_scene(scene, s)
 
     def _make_style(self, style: dict) -> 'rust.Style':
         """Convert style dict to Rust Style."""
@@ -200,6 +202,92 @@ class SceneState:
             else:
                 self._add_shape(scene, c, (x + offset, y))
                 offset += self._measure_width(c) + gap
+
+    def _add_graph_to_scene(self, scene, g: dict):
+        """Add graph nodes and edges to the Rust scene."""
+        nodes = g.get('nodes', [])
+        edges = g.get('edges', [])
+        
+        # Render edges first (behind nodes)
+        for e in edges:
+            from_pt = e['from_pt']
+            to_pt = e['to_pt']
+            edge_style = e.get('edge_style', 'straight')
+            arrow = e.get('arrow', 'forward')
+            stroke = e.get('stroke', '#333')
+            stroke_width = float(e.get('stroke_width', 2.0))
+            label = e.get('label')
+            
+            # Create edge as path with proper styling
+            path_d = self._compute_edge_path(from_pt, to_pt, edge_style)
+            edge_style_obj = rust.Style(
+                stroke=stroke,
+                stroke_width=stroke_width,
+                opacity=1.0
+            )
+            scene.add_path(rust.Path(path_d, edge_style_obj, None))
+            
+            # Add label if present
+            if label:
+                mx = (from_pt[0] + to_pt[0]) / 2
+                my = (from_pt[1] + to_pt[1]) / 2 - 8
+                label_style = rust.Style(fill='#666', opacity=1.0)
+                scene.add_text(rust.Text(mx, my, str(label), 'system-ui', 12.0, 'normal', 'middle', label_style, None))
+        
+        # Render nodes
+        for n in nodes:
+            cx, cy = float(n['cx']), float(n['cy'])
+            w, h = float(n['w']), float(n['h'])
+            shape = n.get('shape', 'rect')
+            node_style_dict = n.get('style', {})
+            label = n.get('label')
+            
+            node_style = rust.Style(
+                fill=node_style_dict.get('fill', '#3b82f6'),
+                stroke=node_style_dict.get('stroke'),
+                stroke_width=float(node_style_dict.get('stroke_width', 1.0)),
+                opacity=float(node_style_dict.get('opacity', 1.0)),
+                corner=float(node_style_dict.get('corner', 4.0))
+            )
+            
+            match shape:
+                case 'circle':
+                    r = min(w, h) / 2
+                    scene.add_circle(rust.Circle(cx, cy, r, node_style, None))
+                case 'ellipse':
+                    scene.add_ellipse(rust.Ellipse(cx, cy, w / 2, h / 2, node_style, None))
+                case 'diamond':
+                    # Create diamond as polygon
+                    pts = [(cx, cy - h/2), (cx + w/2, cy), (cx, cy + h/2), (cx - w/2, cy)]
+                    scene.add_polygon(rust.Polygon(pts, node_style, None))
+                case _:  # rect
+                    x, y = cx - w/2, cy - h/2
+                    corner = float(node_style_dict.get('corner', 4.0))
+                    scene.add_rect(rust.Rect(x, y, w, h, corner, node_style, None))
+            
+            # Add label
+            if label:
+                label_style = rust.Style(fill='#fff', opacity=1.0)
+                scene.add_text(rust.Text(cx, cy, str(label), 'system-ui', 13.0, 'normal', 'middle', label_style, None))
+
+    def _compute_edge_path(self, from_pt: tuple, to_pt: tuple, edge_style: str) -> str:
+        """Compute SVG path data for an edge."""
+        x1, y1 = from_pt
+        x2, y2 = to_pt
+        
+        if edge_style == 'curved':
+            mx = (x1 + x2) / 2
+            my = (y1 + y2) / 2
+            if abs(y2 - y1) > abs(x2 - x1):
+                return f"M{x1},{y1} C{x1},{my} {x2},{my} {x2},{y2}"
+            else:
+                offset = max(abs(x2 - x1), abs(y2 - y1)) * 0.3
+                return f"M{x1},{y1} C{mx},{y1 + offset} {mx},{y2 - offset} {x2},{y2}"
+        elif edge_style == 'orthogonal':
+            mx = (x1 + x2) / 2
+            return f"M{x1},{y1} L{mx},{y1} L{mx},{y2} L{x2},{y2}"
+        else:  # straight
+            return f"M{x1},{y1} L{x2},{y2}"
 
     def _measure_width(self, s: dict) -> float:
         """Measure shape width for layout."""
@@ -285,6 +373,8 @@ class Interpreter:
             self.state.canvas = Canvas(size=c.get('size', 'medium'), fill=c['fill'])
         elif 'Shape' in ast:
             self._add_shape(ast['Shape'])
+        elif 'Graph' in ast:
+            self._add_graph(ast['Graph'])
         elif 'Variable' in ast:
             pass  # Variables handled during parsing
 
@@ -292,6 +382,117 @@ class Interpreter:
         """Add shape to scene state."""
         self.state.shapes.append(self._shape_to_dict(shape))
 
+    def _add_graph(self, graph: dict):
+        """Add graph to scene state as a special shape."""
+        self.state.shapes.append(self._graph_to_dict(graph))
+
+    def _graph_to_dict(self, graph: dict) -> dict:
+        """Convert Rust AST Graph to internal dict format."""
+        layout = graph.get('layout', 'manual')
+        direction = graph.get('direction', 'vertical')
+        spacing = float(graph.get('spacing', 50.0))
+        
+        # Convert nodes
+        nodes = []
+        for n in graph.get('nodes', []):
+            node_style = n.get('style', {})
+            at = n.get('at')
+            size = n.get('size', (80, 40))
+            cx, cy = (float(at[0]), float(at[1])) if at else (0.0, 0.0)
+            w, h = float(size[0]), float(size[1])
+            nodes.append({
+                'id': n['id'],
+                'shape': n.get('shape', 'rect'),
+                'cx': cx, 'cy': cy, 'w': w, 'h': h,
+                'label': n.get('label'),
+                'style': {
+                    'fill': node_style.get('fill', '#3b82f6'),
+                    'stroke': node_style.get('stroke'),
+                    'stroke_width': float(node_style.get('stroke_width', 1.0)),
+                    'opacity': float(node_style.get('opacity', 1.0)),
+                    'corner': float(node_style.get('corner', 4.0)),
+                }
+            })
+        
+        # Apply layout if not manual
+        if layout != 'manual' and nodes:
+            nodes = self._apply_graph_layout(nodes, layout, direction, spacing)
+        
+        # Convert edges - resolve node references to coordinates
+        node_map = {n['id']: n for n in nodes}
+        edges = []
+        for e in graph.get('edges', []):
+            from_node = node_map.get(e['from'])
+            to_node = node_map.get(e['to'])
+            if from_node and to_node:
+                from_pt, to_pt = self._compute_edge_anchors(from_node, to_node)
+                edges.append({
+                    'from_id': e['from'],
+                    'to_id': e['to'],
+                    'from_pt': from_pt,
+                    'to_pt': to_pt,
+                    'edge_style': e.get('style', 'straight'),
+                    'arrow': e.get('arrow', 'forward'),
+                    'label': e.get('label'),
+                    'stroke': e.get('stroke', '#333'),
+                    'stroke_width': float(e.get('stroke_width', 2.0)),
+                })
+        
+        return {
+            'kind': 'graph',
+            'props': {'layout': layout, 'direction': direction, 'spacing': spacing},
+            'style': {},
+            'transform': {},
+            'nodes': nodes,
+            'edges': edges,
+            'children': [],
+        }
+
+    def _apply_graph_layout(self, nodes: list, layout: str, direction: str, spacing: float) -> list:
+        """Apply auto-layout to graph nodes."""
+        is_vertical = direction != 'horizontal'
+        
+        if layout == 'hierarchical':
+            pos = spacing
+            for node in nodes:
+                if is_vertical:
+                    node['cy'] = pos + node['h'] / 2
+                    node['cx'] = spacing * 2
+                    pos += node['h'] + spacing
+                else:
+                    node['cx'] = pos + node['w'] / 2
+                    node['cy'] = spacing * 2
+                    pos += node['w'] + spacing
+        elif layout == 'grid':
+            cols = max(1, int(len(nodes) ** 0.5))
+            for i, node in enumerate(nodes):
+                row, col = i // cols, i % cols
+                node['cx'] = spacing + col * (node['w'] + spacing) + node['w'] / 2
+                node['cy'] = spacing + row * (node['h'] + spacing) + node['h'] / 2
+        
+        return nodes
+
+    def _compute_edge_anchors(self, from_node: dict, to_node: dict) -> tuple:
+        """Compute best anchor points for an edge between two nodes."""
+        dx = to_node['cx'] - from_node['cx']
+        dy = to_node['cy'] - from_node['cy']
+        
+        if abs(dy) > abs(dx):
+            if dy > 0:
+                from_pt = (from_node['cx'], from_node['cy'] + from_node['h'] / 2)
+                to_pt = (to_node['cx'], to_node['cy'] - to_node['h'] / 2)
+            else:
+                from_pt = (from_node['cx'], from_node['cy'] - from_node['h'] / 2)
+                to_pt = (to_node['cx'], to_node['cy'] + to_node['h'] / 2)
+        else:
+            if dx > 0:
+                from_pt = (from_node['cx'] + from_node['w'] / 2, from_node['cy'])
+                to_pt = (to_node['cx'] - to_node['w'] / 2, to_node['cy'])
+            else:
+                from_pt = (from_node['cx'] - from_node['w'] / 2, from_node['cy'])
+                to_pt = (to_node['cx'] + to_node['w'] / 2, to_node['cy'])
+        
+        return from_pt, to_pt
 
     def _shape_to_dict(self, shape: dict) -> dict:
         """Convert Rust AST Shape to dict for rendering."""
