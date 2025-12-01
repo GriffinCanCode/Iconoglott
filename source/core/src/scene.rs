@@ -46,7 +46,7 @@ impl Element {
             Element::Circle(c) => c.bounds(),
             Element::Ellipse(e) => e.bounds(),
             Element::Line(l) => l.bounds(),
-            Element::Path(_) => (0.0, 0.0, 0.0, 0.0),
+            Element::Path(p) => p.bounds(),
             Element::Polygon(p) => p.bounds(),
             Element::Text(t) => t.bounds(),
             Element::Image(i) => i.bounds(),

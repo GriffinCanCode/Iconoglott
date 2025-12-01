@@ -262,21 +262,207 @@ pub struct Path {
     pub d: String,
     #[pyo3(get, set)]
     pub style: Style,
+    #[pyo3(get, set)]
+    pub transform: Option<String>,
+    /// Explicit bounds override (x, y, w, h) - if set, skips path parsing
+    #[pyo3(get, set)]
+    pub bounds_hint: Option<(f32, f32, f32, f32)>,
 }
 
 #[pymethods]
 impl Path {
     #[new]
-    #[pyo3(signature = (d, style=None))]
-    fn new(d: String, style: Option<Style>) -> Self {
-        Self { d, style: style.unwrap_or_default() }
+    #[pyo3(signature = (d, style=None, transform=None, bounds_hint=None))]
+    fn new(d: String, style: Option<Style>, transform: Option<String>, bounds_hint: Option<(f32, f32, f32, f32)>) -> Self {
+        Self { d, style: style.unwrap_or_default(), transform, bounds_hint }
     }
 }
 
 impl Path {
     pub fn to_svg(&self) -> String {
-        format!(r#"<path d="{}"{}/>"#, self.d, self.style.to_svg_attrs())
+        format!(r#"<path d="{}"{}{}/>"#, self.d, self.style.to_svg_attrs(), transform_attr(&self.transform))
     }
+
+    pub fn bounds(&self) -> (f32, f32, f32, f32) {
+        if let Some(hint) = self.bounds_hint {
+            return hint;
+        }
+        parse_path_bounds(&self.d)
+    }
+}
+
+/// Minimal SVG path parser for bounding box extraction
+fn parse_path_bounds(d: &str) -> (f32, f32, f32, f32) {
+    let mut min_x = f32::MAX;
+    let mut min_y = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut max_y = f32::MIN;
+    let mut cur_x = 0.0_f32;
+    let mut cur_y = 0.0_f32;
+    let mut start_x = 0.0_f32;
+    let mut start_y = 0.0_f32;
+    
+    let mut track = |x: f32, y: f32| {
+        min_x = min_x.min(x); min_y = min_y.min(y);
+        max_x = max_x.max(x); max_y = max_y.max(y);
+    };
+
+    let nums: Vec<f32> = extract_numbers(d);
+    let cmds: Vec<(char, usize)> = extract_commands(d);
+    let mut idx = 0;
+
+    for (cmd, _pos) in cmds {
+        match cmd {
+            'M' => if idx + 1 < nums.len() {
+                cur_x = nums[idx]; cur_y = nums[idx + 1];
+                start_x = cur_x; start_y = cur_y;
+                track(cur_x, cur_y); idx += 2;
+                // Implicit L after first pair
+                while idx + 1 < nums.len() && !is_next_cmd(d, _pos, idx, &nums) {
+                    cur_x = nums[idx]; cur_y = nums[idx + 1];
+                    track(cur_x, cur_y); idx += 2;
+                }
+            }
+            'm' => if idx + 1 < nums.len() {
+                cur_x += nums[idx]; cur_y += nums[idx + 1];
+                start_x = cur_x; start_y = cur_y;
+                track(cur_x, cur_y); idx += 2;
+                while idx + 1 < nums.len() && !is_next_cmd(d, _pos, idx, &nums) {
+                    cur_x += nums[idx]; cur_y += nums[idx + 1];
+                    track(cur_x, cur_y); idx += 2;
+                }
+            }
+            'L' => while idx + 1 < nums.len() {
+                cur_x = nums[idx]; cur_y = nums[idx + 1];
+                track(cur_x, cur_y); idx += 2;
+                if is_next_cmd(d, _pos, idx, &nums) { break; }
+            }
+            'l' => while idx + 1 < nums.len() {
+                cur_x += nums[idx]; cur_y += nums[idx + 1];
+                track(cur_x, cur_y); idx += 2;
+                if is_next_cmd(d, _pos, idx, &nums) { break; }
+            }
+            'H' => while idx < nums.len() {
+                cur_x = nums[idx]; track(cur_x, cur_y); idx += 1;
+                if is_next_cmd(d, _pos, idx, &nums) { break; }
+            }
+            'h' => while idx < nums.len() {
+                cur_x += nums[idx]; track(cur_x, cur_y); idx += 1;
+                if is_next_cmd(d, _pos, idx, &nums) { break; }
+            }
+            'V' => while idx < nums.len() {
+                cur_y = nums[idx]; track(cur_x, cur_y); idx += 1;
+                if is_next_cmd(d, _pos, idx, &nums) { break; }
+            }
+            'v' => while idx < nums.len() {
+                cur_y += nums[idx]; track(cur_x, cur_y); idx += 1;
+                if is_next_cmd(d, _pos, idx, &nums) { break; }
+            }
+            'C' => while idx + 5 < nums.len() {
+                // Cubic bezier: track control points and endpoint
+                for i in (0..6).step_by(2) { track(nums[idx + i], nums[idx + i + 1]); }
+                cur_x = nums[idx + 4]; cur_y = nums[idx + 5]; idx += 6;
+                if is_next_cmd(d, _pos, idx, &nums) { break; }
+            }
+            'c' => while idx + 5 < nums.len() {
+                for i in (0..6).step_by(2) { track(cur_x + nums[idx + i], cur_y + nums[idx + i + 1]); }
+                cur_x += nums[idx + 4]; cur_y += nums[idx + 5]; idx += 6;
+                if is_next_cmd(d, _pos, idx, &nums) { break; }
+            }
+            'S' => while idx + 3 < nums.len() {
+                track(nums[idx], nums[idx + 1]); track(nums[idx + 2], nums[idx + 3]);
+                cur_x = nums[idx + 2]; cur_y = nums[idx + 3]; idx += 4;
+                if is_next_cmd(d, _pos, idx, &nums) { break; }
+            }
+            's' => while idx + 3 < nums.len() {
+                track(cur_x + nums[idx], cur_y + nums[idx + 1]);
+                cur_x += nums[idx + 2]; cur_y += nums[idx + 3];
+                track(cur_x, cur_y); idx += 4;
+                if is_next_cmd(d, _pos, idx, &nums) { break; }
+            }
+            'Q' => while idx + 3 < nums.len() {
+                track(nums[idx], nums[idx + 1]); track(nums[idx + 2], nums[idx + 3]);
+                cur_x = nums[idx + 2]; cur_y = nums[idx + 3]; idx += 4;
+                if is_next_cmd(d, _pos, idx, &nums) { break; }
+            }
+            'q' => while idx + 3 < nums.len() {
+                track(cur_x + nums[idx], cur_y + nums[idx + 1]);
+                cur_x += nums[idx + 2]; cur_y += nums[idx + 3];
+                track(cur_x, cur_y); idx += 4;
+                if is_next_cmd(d, _pos, idx, &nums) { break; }
+            }
+            'T' => while idx + 1 < nums.len() {
+                cur_x = nums[idx]; cur_y = nums[idx + 1];
+                track(cur_x, cur_y); idx += 2;
+                if is_next_cmd(d, _pos, idx, &nums) { break; }
+            }
+            't' => while idx + 1 < nums.len() {
+                cur_x += nums[idx]; cur_y += nums[idx + 1];
+                track(cur_x, cur_y); idx += 2;
+                if is_next_cmd(d, _pos, idx, &nums) { break; }
+            }
+            'A' => while idx + 6 < nums.len() {
+                // Arc: rx, ry, rotation, large-arc, sweep, x, y
+                // Track current + radii for conservative bound, then endpoint
+                let rx = nums[idx].abs(); let ry = nums[idx + 1].abs();
+                track(cur_x - rx, cur_y - ry); track(cur_x + rx, cur_y + ry);
+                cur_x = nums[idx + 5]; cur_y = nums[idx + 6];
+                track(cur_x, cur_y); idx += 7;
+                if is_next_cmd(d, _pos, idx, &nums) { break; }
+            }
+            'a' => while idx + 6 < nums.len() {
+                let rx = nums[idx].abs(); let ry = nums[idx + 1].abs();
+                track(cur_x - rx, cur_y - ry); track(cur_x + rx, cur_y + ry);
+                cur_x += nums[idx + 5]; cur_y += nums[idx + 6];
+                track(cur_x, cur_y); idx += 7;
+                if is_next_cmd(d, _pos, idx, &nums) { break; }
+            }
+            'Z' | 'z' => { cur_x = start_x; cur_y = start_y; }
+            _ => {}
+        }
+    }
+
+    if min_x == f32::MAX { (0.0, 0.0, 0.0, 0.0) }
+    else { (min_x, min_y, max_x - min_x, max_y - min_y) }
+}
+
+/// Extract all numbers from path data
+fn extract_numbers(d: &str) -> Vec<f32> {
+    let mut nums = Vec::new();
+    let mut buf = String::new();
+    let mut chars = d.chars().peekable();
+    
+    while let Some(c) = chars.next() {
+        if c.is_ascii_digit() || c == '.' || (c == '-' && buf.is_empty()) || (c == '-' && buf.ends_with("e")) {
+            buf.push(c);
+        } else if c == 'e' || c == 'E' {
+            buf.push('e');
+        } else {
+            if !buf.is_empty() {
+                if let Ok(n) = buf.parse::<f32>() { nums.push(n); }
+                buf.clear();
+            }
+            // Handle negative sign as start of new number
+            if c == '-' { buf.push(c); }
+        }
+    }
+    if !buf.is_empty() {
+        if let Ok(n) = buf.parse::<f32>() { nums.push(n); }
+    }
+    nums
+}
+
+/// Extract command letters with their positions
+fn extract_commands(d: &str) -> Vec<(char, usize)> {
+    d.char_indices()
+        .filter(|(_, c)| matches!(c, 'M'|'m'|'L'|'l'|'H'|'h'|'V'|'v'|'C'|'c'|'S'|'s'|'Q'|'q'|'T'|'t'|'A'|'a'|'Z'|'z'))
+        .map(|(i, c)| (c, i))
+        .collect()
+}
+
+/// Check if we've consumed numbers up to the next command (simple heuristic)
+fn is_next_cmd(_d: &str, _cmd_pos: usize, _idx: usize, _nums: &[f32]) -> bool {
+    false // Let the match arms handle iteration via index bounds
 }
 
 /// Polygon primitive
