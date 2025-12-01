@@ -7,7 +7,7 @@ import { createClient } from '@iconoglott/renderer/client';
 import type { ParseError } from '@iconoglott/renderer';
 
 // Semantic classification for syntax highlighting (presentation layer only)
-const KEYWORDS = new Set(['canvas', 'group', 'stack', 'row', 'graph', 'node', 'edge', 'symbol', 'use']);
+const KEYWORDS = new Set(['canvas', 'group', 'stack', 'row', 'graph', 'node', 'edge', 'symbol', 'use', '@keyframes']);
 const SHAPES = new Set(['rect', 'circle', 'ellipse', 'line', 'path', 'polygon', 'text', 'image', 'arc', 'curve', 'diamond']);
 const PROPERTIES = new Set([
   'at', 'size', 'radius', 'from', 'to', 'fill', 'stroke', 'opacity', 'corner',
@@ -15,8 +15,13 @@ const PROPERTIES = new Set([
   'translate', 'rotate', 'scale', 'origin', 'width', 'height', 'gap', 'vertical', 'horizontal',
   'linear', 'radial', 'd', 'points', 'href', 'label', 'shape', 'spacing', 'curved', 'straight',
   'orthogonal', 'hierarchical', 'force', 'grid', 'tree', 'manual', 'justify', 'align', 'wrap',
-  'start', 'smooth', 'sharp', 'closed', 'padding', 'anchor', 'auto', 'viewbox'
+  'start', 'smooth', 'sharp', 'closed', 'padding', 'anchor', 'auto', 'viewbox',
+  // Animation properties
+  'animate', 'transition', 'delay', 'infinite', 'alternate', 'forwards', 'backwards', 'both',
+  'ease', 'ease-in', 'ease-out', 'ease-in-out', 'normal', 'reverse', 'alternate-reverse'
 ]);
+// Duration pattern for syntax highlighting
+const DURATION_PATTERN = /^(\d+\.?\d*)(ms|s)\b/;
 
 const DEFAULT_CODE = `// Iconoglott — Visual DSL for Vector Graphics
 // Demo: Reusable Components with symbol/use
@@ -340,5 +345,29 @@ class IconoglottPlayground {
   }
 }
 
-new IconoglottPlayground();
+// Store instance for HMR
+let playground = new IconoglottPlayground();
+
+// HMR support - preserve editor state across hot reloads
+// @ts-ignore - Vite HMR types
+if (import.meta.hot) {
+  // @ts-ignore - Vite HMR types
+  import.meta.hot.accept(() => {
+    const editor = document.getElementById('editor') as HTMLTextAreaElement;
+    const currentValue = editor?.value;
+    const currentPos = editor?.selectionStart;
+    
+    // Recreate playground
+    playground = new IconoglottPlayground();
+    
+    // Restore state after a tick
+    if (currentValue && editor) {
+      requestAnimationFrame(() => {
+        editor.value = currentValue;
+        editor.selectionStart = editor.selectionEnd = currentPos ?? 0;
+        editor.dispatchEvent(new Event('input'));
+      });
+    }
+  });
+}
 

@@ -47,5 +47,5 @@ name = "rendering"
 harness = false
 
 [profile.release]
-opt-level = "s"
+opt-level = 3
 lto = true
