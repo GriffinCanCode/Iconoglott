@@ -41,6 +41,22 @@ stop:
 test: install
 	@$(MAKE) -C source test
 
+# Run tests with coverage
+test-cov: install
+	@$(MAKE) -C source test-cov
+
+# Run Rust tests
+test-rust: core
+	@$(MAKE) -C source test-rust
+
+# Run TypeScript tests
+test-ts:
+	@cd distribution/npm && npm test
+
+# Run all tests (Python + Rust + TypeScript)
+test-all: test-rust test test-ts
+	@echo "All tests completed"
+
 lint:
 	@$(MAKE) -C source lint
 

@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 default = ["python"]
 python = ["pyo3"]
 wasm = ["wasm-bindgen", "js-sys", "web-sys", "console_error_panic_hook"]
+bench = []  # Enables core modules without PyO3 for benchmarking
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
