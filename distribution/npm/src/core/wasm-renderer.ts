@@ -10,26 +10,22 @@
  * - DSL parsing (lexer/parser)
  * - High-level scene API
  * - React bindings
+ * 
+ * Uses serde-wasm-bindgen for direct JS<->Rust value conversion (no JSON overhead)
  */
 
 import type { Canvas, GradientDef, ShadowDef } from './types';
-import { tryGetWasm, isWasmLoaded, type WasmCore } from '../wasm/bridge';
+import type { WasmCore, WasmStyle, WasmDiffResult, WasmSceneInput, TextMetrics } from '../wasm/bridge';
+
+// Re-export types from bridge
+export type { WasmDiffOp, WasmDiffResult, WasmSceneInput, TextMetrics } from '../wasm/bridge';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Style serialization for WASM
+// Style conversion for WASM
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface WasmStyle {
-  fill?: string;
-  stroke?: string;
-  stroke_width: number;
-  opacity: number;
-  corner: number;
-  filter?: string;
-}
-
-function toWasmStyle(style: Record<string, unknown>): string {
-  const ws: WasmStyle = {
+function toWasmStyle(style: Record<string, unknown>): WasmStyle {
+  return {
     fill: style.fill as string | undefined,
     stroke: style.stroke as string | undefined,
     stroke_width: (style.strokeWidth as number) ?? 1,
@@ -37,7 +33,6 @@ function toWasmStyle(style: Record<string, unknown>): string {
     corner: (style.corner as number) ?? 0,
     filter: style.filter as string | undefined,
   };
-  return JSON.stringify(ws);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -72,7 +67,7 @@ function buildTransform(tf: Record<string, unknown>): string | undefined {
 }
 
 /**
- * Render shape using WASM if available, otherwise falls back to TS
+ * Render shape using WASM - passes native JS objects directly (no JSON serialization)
  */
 export function renderShapeWasm(s: ShapeDict, wasm: WasmCore, offset: [number, number] = [0, 0]): string {
   const { kind, props, style, transform, children } = s;
@@ -107,7 +102,7 @@ export function renderShapeWasm(s: ShapeDict, wasm: WasmCore, offset: [number, n
     }
     case 'polygon': {
       const points = (props.points as [number, number][]) ?? [];
-      return wasm.render_polygon(JSON.stringify(points), toWasmStyle(style), tf);
+      return wasm.render_polygon(points, toWasmStyle(style), tf);
     }
     case 'text': {
       const content = (props.content as string) ?? '';
@@ -159,10 +154,9 @@ export function renderShapeWasm(s: ShapeDict, wasm: WasmCore, offset: [number, n
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function renderGradientWasm(wasm: WasmCore, id: string, grad: GradientDef): string {
-  if (grad.type === 'radial') {
-    return wasm.render_radial_gradient(id, grad.from, grad.to);
-  }
-  return wasm.render_linear_gradient(id, grad.from, grad.to, grad.angle);
+  return grad.type === 'radial'
+    ? wasm.render_radial_gradient(id, grad.from, grad.to)
+    : wasm.render_linear_gradient(id, grad.from, grad.to, grad.angle);
 }
 
 export function renderShadowWasm(wasm: WasmCore, id: string, shadow: ShadowDef): string {
@@ -170,85 +164,43 @@ export function renderShadowWasm(wasm: WasmCore, id: string, shadow: ShadowDef):
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Scene Diffing (WASM-accelerated)
+// Scene Diffing (WASM-accelerated) - direct object passing, no JSON
 // ─────────────────────────────────────────────────────────────────────────────
 
-export interface WasmDiffOp {
-  type: 'none' | 'full_redraw' | 'add' | 'remove' | 'update' | 'move' | 'update_defs';
-  id?: string;
-  idx?: number;
-  svg?: string;
-  from_idx?: number;
-  to_idx?: number;
-}
-
-export interface WasmDiffResult {
-  ops: WasmDiffOp[];
-  canvas_changed: boolean;
-}
-
-export interface WasmSceneInput {
-  canvas: { size: string; fill: string };
-  elements: Array<{ id: string; kind: string; svg: string }>;
-  defs: string;
-}
-
-/**
- * Diff two scenes using WASM
- */
+/** Diff two scenes using WASM - returns native JS object directly */
 export function diffScenesWasm(wasm: WasmCore, old: WasmSceneInput, current: WasmSceneInput): WasmDiffResult {
-  const result = wasm.diff_scenes(JSON.stringify(old), JSON.stringify(current));
-  return JSON.parse(result) as WasmDiffResult;
+  return wasm.diff_scenes(old, current);
 }
 
-/**
- * Check if scenes are equal (fast path)
- */
+/** Check if scenes are equal (fast path) */
 export function scenesEqualWasm(wasm: WasmCore, old: WasmSceneInput, current: WasmSceneInput): boolean {
-  return wasm.scenes_equal(JSON.stringify(old), JSON.stringify(current));
+  return wasm.scenes_equal(old, current);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Hashing (WASM-accelerated)
+// Hashing (WASM-accelerated) - key passed as native object
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Compute element ID using WASM FNV-1a
- */
+/** Compute element ID using WASM FNV-1a */
 export function computeIdWasm(wasm: WasmCore, order: number, kind: string, keyProps?: Record<string, unknown>): string {
-  const keyJson = keyProps ? JSON.stringify(keyProps) : '{}';
-  return wasm.compute_element_id(order, kind, keyJson);
+  return wasm.compute_element_id(order, kind, keyProps ?? {});
 }
 
-/**
- * Compute content hash using WASM FNV-1a
- */
+/** Compute content hash using WASM FNV-1a */
 export function hashContentWasm(wasm: WasmCore, content: string): string {
   return wasm.fnv1a_hash(content);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Text Metrics (WASM-accelerated)
+// Text Metrics (WASM-accelerated) - returns native JS object
 // ─────────────────────────────────────────────────────────────────────────────
 
-export interface TextMetrics {
-  width: number;
-  height: number;
-  ascender: number;
-  descender: number;
-}
-
-/**
- * Measure text dimensions using bundled font metrics
- */
+/** Measure text dimensions using bundled font metrics */
 export function measureTextWasm(wasm: WasmCore, content: string, font: string, size: number): TextMetrics {
-  return JSON.parse(wasm.measure_text(content, font, size)) as TextMetrics;
+  return wasm.measure_text(content, font, size);
 }
 
-/**
- * Compute text bounding box accounting for anchor position
- * Returns [x, y, width, height]
- */
+/** Compute text bounding box accounting for anchor position - returns [x, y, width, height] */
 export function computeTextBoundsWasm(
   wasm: WasmCore,
   x: number,
@@ -258,22 +210,14 @@ export function computeTextBoundsWasm(
   size: number,
   anchor: string
 ): [number, number, number, number] {
-  return JSON.parse(wasm.compute_text_bounds(x, y, content, font, size, anchor)) as [number, number, number, number];
+  return wasm.compute_text_bounds(x, y, content, font, size, anchor);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Full Scene Rendering
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Render complete scene SVG using WASM
- */
-export function renderSceneWasm(
-  wasm: WasmCore,
-  canvas: Canvas,
-  defs: string,
-  elementsSvg: string
-): string {
+/** Render complete scene SVG using WASM */
+export function renderSceneWasm(wasm: WasmCore, canvas: Canvas, defs: string, elementsSvg: string): string {
   return wasm.render_scene(canvas.size, canvas.fill, defs, elementsSvg);
 }
-

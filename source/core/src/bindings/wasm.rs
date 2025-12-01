@@ -28,7 +28,7 @@ pub fn size_to_pixels(name: &str) -> JsValue {
     match CanvasSize::from_str(name) {
         Some(size) => {
             let (w, h) = size.dimensions();
-            JsValue::from_str(&format!("[{},{}]", w, h))
+            serde_wasm_bindgen::to_value(&[w, h]).unwrap_or(JsValue::NULL)
         }
         None => JsValue::NULL,
     }
@@ -40,21 +40,24 @@ pub fn is_valid_size(name: &str) -> bool {
     CanvasSize::from_str(name).is_some()
 }
 
-/// Get all valid size names as JSON array
+/// Get all valid size names as array
 #[wasm_bindgen]
-pub fn get_all_sizes() -> String {
-    serde_json::to_string(&CanvasSize::all_names()).unwrap_or_else(|_| "[]".into())
+pub fn get_all_sizes() -> JsValue {
+    serde_wasm_bindgen::to_value(&CanvasSize::all_names()).unwrap_or(JsValue::NULL)
 }
 
-/// Get size info as JSON: {"name": "...", "width": N, "height": N}
+/// Get size info as object: {name, width, height}
 #[wasm_bindgen]
-pub fn get_size_info(name: &str) -> String {
+pub fn get_size_info(name: &str) -> JsValue {
     match CanvasSize::from_str(name) {
         Some(size) => {
             let (w, h) = size.dimensions();
-            format!(r#"{{"name":"{}","width":{},"height":{}}}"#, size, w, h)
+            #[derive(Serialize)]
+            struct SizeInfo { name: String, width: u32, height: u32 }
+            serde_wasm_bindgen::to_value(&SizeInfo { name: size.to_string(), width: w, height: h })
+                .unwrap_or(JsValue::NULL)
         }
-        None => "null".into(),
+        None => JsValue::NULL,
     }
 }
 
@@ -78,7 +81,7 @@ pub fn fnv1a_hash(data: &str) -> String {
 
 /// Compute stable element ID from order, kind, and key properties
 #[wasm_bindgen]
-pub fn compute_element_id(order: u32, kind: &str, key_json: &str) -> String {
+pub fn compute_element_id(order: u32, kind: &str, key: JsValue) -> String {
     let mut hash = FNV_OFFSET;
     
     // Hash order
@@ -93,8 +96,11 @@ pub fn compute_element_id(order: u32, kind: &str, key_json: &str) -> String {
         hash = hash.wrapping_mul(FNV_PRIME);
     }
     
-    // Hash key properties
-    for byte in key_json.bytes() {
+    // Hash key properties (serialize to JSON for consistent hashing)
+    let key_str = js_sys::JSON::stringify(&key)
+        .map(|s| s.as_string().unwrap_or_default())
+        .unwrap_or_default();
+    for byte in key_str.bytes() {
         hash ^= byte as u64;
         hash = hash.wrapping_mul(FNV_PRIME);
     }
@@ -107,40 +113,19 @@ pub fn compute_element_id(order: u32, kind: &str, key_json: &str) -> String {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[wasm_bindgen]
 pub struct WasmStyle {
-    fill: Option<String>,
-    stroke: Option<String>,
-    stroke_width: f32,
-    opacity: f32,
-    corner: f32,
-    filter: Option<String>,
+    pub fill: Option<String>,
+    pub stroke: Option<String>,
+    pub stroke_width: f32,
+    pub opacity: f32,
+    pub corner: f32,
+    pub filter: Option<String>,
 }
 
-#[wasm_bindgen]
 impl WasmStyle {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
-        Self { fill: None, stroke: None, stroke_width: 1.0, opacity: 1.0, corner: 0.0, filter: None }
+    fn from_js(v: JsValue) -> Self {
+        serde_wasm_bindgen::from_value(v).unwrap_or_default()
     }
-
-    #[wasm_bindgen(setter)]
-    pub fn set_fill(&mut self, v: Option<String>) { self.fill = v; }
-    
-    #[wasm_bindgen(setter)]
-    pub fn set_stroke(&mut self, v: Option<String>) { self.stroke = v; }
-    
-    #[wasm_bindgen(setter)]
-    pub fn set_stroke_width(&mut self, v: f32) { self.stroke_width = v; }
-    
-    #[wasm_bindgen(setter)]
-    pub fn set_opacity(&mut self, v: f32) { self.opacity = v; }
-    
-    #[wasm_bindgen(setter)]
-    pub fn set_corner(&mut self, v: f32) { self.corner = v; }
-    
-    #[wasm_bindgen(setter)]
-    pub fn set_filter(&mut self, v: Option<String>) { self.filter = v; }
 
     fn to_svg_attrs(&self) -> String {
         let mut attrs = Vec::with_capacity(4);
@@ -165,23 +150,23 @@ impl WasmStyle {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[wasm_bindgen]
-pub fn render_rect(x: f32, y: f32, w: f32, h: f32, rx: f32, style_json: &str, transform: Option<String>) -> String {
-    let style: WasmStyle = serde_json::from_str(style_json).unwrap_or_default();
+pub fn render_rect(x: f32, y: f32, w: f32, h: f32, rx: f32, style: JsValue, transform: Option<String>) -> String {
+    let style = WasmStyle::from_js(style);
     let rx_attr = if rx > 0.0 { format!(r#" rx="{}""#, rx) } else { String::new() };
     let tf = transform.map_or(String::new(), |t| format!(r#" transform="{}""#, t));
     format!(r#"<rect x="{}" y="{}" width="{}" height="{}"{}{}{}/>"#, x, y, w, h, rx_attr, style.to_svg_attrs(), tf)
 }
 
 #[wasm_bindgen]
-pub fn render_circle(cx: f32, cy: f32, r: f32, style_json: &str, transform: Option<String>) -> String {
-    let style: WasmStyle = serde_json::from_str(style_json).unwrap_or_default();
+pub fn render_circle(cx: f32, cy: f32, r: f32, style: JsValue, transform: Option<String>) -> String {
+    let style = WasmStyle::from_js(style);
     let tf = transform.map_or(String::new(), |t| format!(r#" transform="{}""#, t));
     format!(r#"<circle cx="{}" cy="{}" r="{}"{}{}/>"#, cx, cy, r, style.to_svg_attrs(), tf)
 }
 
 #[wasm_bindgen]
-pub fn render_ellipse(cx: f32, cy: f32, rx: f32, ry: f32, style_json: &str, transform: Option<String>) -> String {
-    let style: WasmStyle = serde_json::from_str(style_json).unwrap_or_default();
+pub fn render_ellipse(cx: f32, cy: f32, rx: f32, ry: f32, style: JsValue, transform: Option<String>) -> String {
+    let style = WasmStyle::from_js(style);
     let tf = transform.map_or(String::new(), |t| format!(r#" transform="{}""#, t));
     format!(r#"<ellipse cx="{}" cy="{}" rx="{}" ry="{}"{}{}/>"#, cx, cy, rx, ry, style.to_svg_attrs(), tf)
 }
@@ -193,16 +178,16 @@ pub fn render_line(x1: f32, y1: f32, x2: f32, y2: f32, stroke: &str, stroke_widt
 }
 
 #[wasm_bindgen]
-pub fn render_path(d: &str, style_json: &str, transform: Option<String>) -> String {
-    let style: WasmStyle = serde_json::from_str(style_json).unwrap_or_default();
+pub fn render_path(d: &str, style: JsValue, transform: Option<String>) -> String {
+    let style = WasmStyle::from_js(style);
     let tf = transform.map_or(String::new(), |t| format!(r#" transform="{}""#, t));
     format!(r#"<path d="{}"{}{}/>"#, d, style.to_svg_attrs(), tf)
 }
 
 #[wasm_bindgen]
-pub fn render_polygon(points_json: &str, style_json: &str, transform: Option<String>) -> String {
-    let points: Vec<(f32, f32)> = serde_json::from_str(points_json).unwrap_or_default();
-    let style: WasmStyle = serde_json::from_str(style_json).unwrap_or_default();
+pub fn render_polygon(points: JsValue, style: JsValue, transform: Option<String>) -> String {
+    let points: Vec<(f32, f32)> = serde_wasm_bindgen::from_value(points).unwrap_or_default();
+    let style = WasmStyle::from_js(style);
     let pts: String = points.iter().map(|(x, y)| format!("{},{}", x, y)).collect::<Vec<_>>().join(" ");
     let tf = transform.map_or(String::new(), |t| format!(r#" transform="{}""#, t));
     format!(r#"<polygon points="{}"{}{}/>"#, pts, style.to_svg_attrs(), tf)
@@ -219,25 +204,28 @@ pub fn render_text(x: f32, y: f32, content: &str, font: &str, size: f32, weight:
 }
 
 /// Measure text dimensions using font metrics
-/// Returns JSON: {"width": f32, "height": f32, "ascender": f32, "descender": f32}
+/// Returns {width, height, ascender, descender}
 #[wasm_bindgen]
-pub fn measure_text(content: &str, font: &str, size: f32) -> String {
+pub fn measure_text(content: &str, font: &str, size: f32) -> JsValue {
     let m = crate::font::measure_text(content, font, size);
-    format!(r#"{{"width":{},"height":{},"ascender":{},"descender":{}}}"#, 
-        m.width, m.height, m.ascender, m.descender)
+    #[derive(Serialize)]
+    struct Metrics { width: f32, height: f32, ascender: f32, descender: f32 }
+    serde_wasm_bindgen::to_value(&Metrics { 
+        width: m.width, height: m.height, ascender: m.ascender, descender: m.descender 
+    }).unwrap_or(JsValue::NULL)
 }
 
 /// Compute text bounding box accounting for anchor position
-/// Returns JSON: [x, y, width, height]
+/// Returns [x, y, width, height]
 #[wasm_bindgen]
-pub fn compute_text_bounds(x: f32, y: f32, content: &str, font: &str, size: f32, anchor: &str) -> String {
+pub fn compute_text_bounds(x: f32, y: f32, content: &str, font: &str, size: f32, anchor: &str) -> JsValue {
     let m = crate::font::measure_text(content, font, size);
     let adj_x = match anchor {
         "middle" => x - m.width / 2.0,
         "end" => x - m.width,
         _ => x,
     };
-    format!("[{},{},{},{}]", adj_x, y - m.ascender, m.width, m.height)
+    serde_wasm_bindgen::to_value(&[adj_x, y - m.ascender, m.width, m.height]).unwrap_or(JsValue::NULL)
 }
 
 #[wasm_bindgen]
@@ -299,7 +287,7 @@ struct DiffInput {
 
 #[derive(Serialize, Deserialize)]
 struct CanvasInput {
-    size: String,  // Size name (nano, micro, tiny, small, medium, large, xlarge, huge, massive, giant)
+    size: String,
     fill: String,
 }
 
@@ -332,26 +320,25 @@ struct DiffResult {
     canvas_changed: bool,
 }
 
-/// Diff two scenes and return JSON array of operations
+/// Diff two scenes and return operations
 #[wasm_bindgen]
-pub fn diff_scenes(old_json: &str, new_json: &str) -> String {
-    let old: DiffInput = match serde_json::from_str(old_json) {
+pub fn diff_scenes(old: JsValue, new: JsValue) -> JsValue {
+    let old: DiffInput = match serde_wasm_bindgen::from_value(old) {
         Ok(v) => v,
-        Err(_) => return r#"{"ops":[{"type":"full_redraw"}],"canvas_changed":true}"#.to_string(),
+        Err(_) => return full_redraw_result(),
     };
     
-    let new: DiffInput = match serde_json::from_str(new_json) {
+    let new: DiffInput = match serde_wasm_bindgen::from_value(new) {
         Ok(v) => v,
-        Err(_) => return r#"{"ops":[{"type":"full_redraw"}],"canvas_changed":true}"#.to_string(),
+        Err(_) => return full_redraw_result(),
     };
 
     // Canvas change = full redraw
-    if old.canvas.size != new.canvas.size || 
-       old.canvas.fill != new.canvas.fill {
-        return serde_json::to_string(&DiffResult {
+    if old.canvas.size != new.canvas.size || old.canvas.fill != new.canvas.fill {
+        return serde_wasm_bindgen::to_value(&DiffResult {
             ops: vec![DiffOp { op_type: "full_redraw".into(), id: None, idx: None, svg: None, from_idx: None, to_idx: None }],
             canvas_changed: true,
-        }).unwrap_or_default();
+        }).unwrap_or_else(|_| full_redraw_result());
     }
 
     // Build old index
@@ -430,14 +417,23 @@ pub fn diff_scenes(old_json: &str, new_json: &str) -> String {
         });
     }
 
-    serde_json::to_string(&DiffResult { ops, canvas_changed: false }).unwrap_or_default()
+    serde_wasm_bindgen::to_value(&DiffResult { ops, canvas_changed: false })
+        .unwrap_or_else(|_| full_redraw_result())
+}
+
+fn full_redraw_result() -> JsValue {
+    let result = DiffResult {
+        ops: vec![DiffOp { op_type: "full_redraw".into(), id: None, idx: None, svg: None, from_idx: None, to_idx: None }],
+        canvas_changed: true,
+    };
+    serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL)
 }
 
 /// Check if two scenes need any updates (fast path)
 #[wasm_bindgen]
-pub fn scenes_equal(old_json: &str, new_json: &str) -> bool {
-    let old: Result<DiffInput, _> = serde_json::from_str(old_json);
-    let new: Result<DiffInput, _> = serde_json::from_str(new_json);
+pub fn scenes_equal(old: JsValue, new: JsValue) -> bool {
+    let old: Result<DiffInput, _> = serde_wasm_bindgen::from_value(old);
+    let new: Result<DiffInput, _> = serde_wasm_bindgen::from_value(new);
     
     match (old, new) {
         (Ok(o), Ok(n)) => {
@@ -481,9 +477,9 @@ pub fn render_scene(size_name: &str, background: &str, defs: &str, elements_svg:
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[wasm_bindgen]
-pub fn compute_path_bounds(d: &str) -> String {
+pub fn compute_path_bounds(d: &str) -> JsValue {
     let bounds = parse_path_bounds(d);
-    serde_json::to_string(&bounds).unwrap_or_else(|_| "[0,0,0,0]".to_string())
+    serde_wasm_bindgen::to_value(&[bounds.0, bounds.1, bounds.2, bounds.3]).unwrap_or(JsValue::NULL)
 }
 
 fn parse_path_bounds(d: &str) -> (f32, f32, f32, f32) {
@@ -590,3 +586,174 @@ fn extract_numbers(d: &str) -> Vec<f32> {
     nums
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Graph/Flowchart Primitives
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Render a diamond shape (rotated rectangle for flowcharts)
+#[wasm_bindgen]
+pub fn render_diamond(cx: f32, cy: f32, w: f32, h: f32, style: JsValue, transform: Option<String>) -> String {
+    let style = WasmStyle::from_js(style);
+    let pts = format!("{},{} {},{} {},{} {},{}",
+        cx, cy - h / 2.0, cx + w / 2.0, cy, cx, cy + h / 2.0, cx - w / 2.0, cy);
+    let tf = transform.map_or(String::new(), |t| format!(r#" transform="{}""#, t));
+    format!(r#"<polygon points="{}"{}{}/>"#, pts, style.to_svg_attrs(), tf)
+}
+
+/// Render a graph node (shape + label)
+#[wasm_bindgen]
+pub fn render_node(id: &str, shape: &str, cx: f32, cy: f32, w: f32, h: f32, label: Option<String>, style: JsValue) -> String {
+    let style = WasmStyle::from_js(style);
+    
+    let shape_svg = match shape {
+        "circle" => {
+            let r = w.min(h) / 2.0;
+            format!(r#"<circle cx="{}" cy="{}" r="{}"{}/>"#, cx, cy, r, style.to_svg_attrs())
+        }
+        "ellipse" => {
+            format!(r#"<ellipse cx="{}" cy="{}" rx="{}" ry="{}"{}/>"#, cx, cy, w / 2.0, h / 2.0, style.to_svg_attrs())
+        }
+        "diamond" => {
+            let pts = format!("{},{} {},{} {},{} {},{}",
+                cx, cy - h / 2.0, cx + w / 2.0, cy, cx, cy + h / 2.0, cx - w / 2.0, cy);
+            format!(r#"<polygon points="{}"{}/>"#, pts, style.to_svg_attrs())
+        }
+        _ => { // rect
+            let x = cx - w / 2.0;
+            let y = cy - h / 2.0;
+            let rx = if style.corner > 0.0 { format!(r#" rx="{}""#, style.corner) } else { String::new() };
+            format!(r#"<rect x="{}" y="{}" width="{}" height="{}"{}{}/>"#, x, y, w, h, rx, style.to_svg_attrs())
+        }
+    };
+    
+    let label_svg = label.map_or(String::new(), |lbl| {
+        format!(r##"<text x="{}" y="{}" text-anchor="middle" dominant-baseline="middle" fill="#000">{}</text>"##, 
+            cx, cy, html_escape(&lbl))
+    });
+    
+    format!(r##"<g id="node-{}">{}{}</g>"##, html_escape(id), shape_svg, label_svg)
+}
+
+/// Render an edge (connector with optional arrow)
+#[wasm_bindgen]
+pub fn render_edge(from_x: f32, from_y: f32, to_x: f32, to_y: f32, edge_style: &str, arrow: &str, label: Option<String>, stroke: &str, stroke_width: f32) -> String {
+    let path_d = match edge_style {
+        "curved" => {
+            let mx = (from_x + to_x) / 2.0;
+            let my = (from_y + to_y) / 2.0;
+            if (to_y - from_y).abs() > (to_x - from_x).abs() {
+                format!("M{},{} C{},{} {},{} {},{}", from_x, from_y, from_x, my, to_x, my, to_x, to_y)
+            } else {
+                let offset = ((to_x - from_x).abs().max((to_y - from_y).abs())) * 0.3;
+                format!("M{},{} C{},{} {},{} {},{}", from_x, from_y, mx, from_y + offset, mx, to_y - offset, to_x, to_y)
+            }
+        }
+        "orthogonal" => {
+            let mx = (from_x + to_x) / 2.0;
+            format!("M{},{} L{},{} L{},{} L{},{}", from_x, from_y, mx, from_y, mx, to_y, to_x, to_y)
+        }
+        _ => format!("M{},{} L{},{}", from_x, from_y, to_x, to_y), // straight
+    };
+    
+    let markers = match arrow {
+        "forward" => r#" marker-end="url(#arrow-end)""#,
+        "backward" => r#" marker-start="url(#arrow-start)""#,
+        "both" => r#" marker-start="url(#arrow-start)" marker-end="url(#arrow-end)""#,
+        _ => "",
+    };
+    
+    let label_svg = label.map_or(String::new(), |lbl| {
+        let mx = (from_x + to_x) / 2.0;
+        let my = (from_y + to_y) / 2.0;
+        format!(r##"<text x="{}" y="{}" text-anchor="middle" dominant-baseline="middle" font-size="12" fill="#666">{}</text>"##, 
+            mx, my - 8.0, html_escape(&lbl))
+    });
+    
+    format!(r##"<path d="{}" fill="none" stroke="{}" stroke-width="{}"{}/>{}"##, path_d, stroke, stroke_width, markers, label_svg)
+}
+
+/// Render arrow marker definitions (call once per SVG if using edges)
+#[wasm_bindgen]
+pub fn render_arrow_markers(color: &str) -> String {
+    format!(
+        r#"<marker id="arrow-start" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto-start-reverse"><polygon points="10 0, 10 7, 0 3.5" fill="{color}"/></marker><marker id="arrow-end" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="{color}"/></marker>"#,
+        color = color
+    )
+}
+
+/// Compute best anchor points for an edge between two nodes
+/// Returns {from: [x, y], to: [x, y]}
+#[wasm_bindgen]
+pub fn compute_edge_anchors(from_cx: f32, from_cy: f32, from_w: f32, from_h: f32, to_cx: f32, to_cy: f32, to_w: f32, to_h: f32) -> JsValue {
+    #[derive(Serialize)]
+    struct EdgeAnchors { from: [f32; 2], to: [f32; 2] }
+    
+    let dx = to_cx - from_cx;
+    let dy = to_cy - from_cy;
+    
+    let (from_pt, to_pt) = if dy.abs() > dx.abs() {
+        if dy > 0.0 {
+            ([from_cx, from_cy + from_h / 2.0], [to_cx, to_cy - to_h / 2.0])
+        } else {
+            ([from_cx, from_cy - from_h / 2.0], [to_cx, to_cy + to_h / 2.0])
+        }
+    } else if dx > 0.0 {
+        ([from_cx + from_w / 2.0, from_cy], [to_cx - to_w / 2.0, to_cy])
+    } else {
+        ([from_cx - from_w / 2.0, from_cy], [to_cx + to_w / 2.0, to_cy])
+    };
+    
+    serde_wasm_bindgen::to_value(&EdgeAnchors { from: from_pt, to: to_pt }).unwrap_or(JsValue::NULL)
+}
+
+#[derive(Deserialize)]
+struct NodeIn { id: String, w: f32, h: f32 }
+
+#[derive(Serialize)]
+struct NodeOut { id: String, cx: f32, cy: f32 }
+
+/// Apply hierarchical layout to nodes
+/// Input: array of {id, w, h}
+/// Output: array of {id, cx, cy}
+#[wasm_bindgen]
+pub fn layout_hierarchical(nodes: JsValue, direction: &str, spacing: f32) -> JsValue {
+    let nodes: Vec<NodeIn> = serde_wasm_bindgen::from_value(nodes).unwrap_or_default();
+    let is_vertical = direction != "horizontal";
+    
+    let mut pos = spacing;
+    let outputs: Vec<NodeOut> = nodes.iter().map(|n| {
+        let (cx, cy) = if is_vertical {
+            let cy = pos;
+            pos += n.h + spacing;
+            (spacing * 2.0, cy + n.h / 2.0)
+        } else {
+            let cx = pos;
+            pos += n.w + spacing;
+            (cx + n.w / 2.0, spacing * 2.0)
+        };
+        NodeOut { id: n.id.clone(), cx, cy }
+    }).collect();
+    
+    serde_wasm_bindgen::to_value(&outputs).unwrap_or(JsValue::NULL)
+}
+
+/// Apply grid layout to nodes
+/// Input: array of {id, w, h}
+/// Output: array of {id, cx, cy}
+#[wasm_bindgen]
+pub fn layout_grid(nodes: JsValue, spacing: f32) -> JsValue {
+    let nodes: Vec<NodeIn> = serde_wasm_bindgen::from_value(nodes).unwrap_or_default();
+    if nodes.is_empty() { return serde_wasm_bindgen::to_value(&Vec::<NodeOut>::new()).unwrap_or(JsValue::NULL); }
+    
+    let cols = (nodes.len() as f32).sqrt().ceil() as usize;
+    
+    let outputs: Vec<NodeOut> = nodes.iter().enumerate().map(|(i, n)| {
+        let row = i / cols;
+        let col = i % cols;
+        let cx = spacing + (col as f32) * (n.w + spacing) + n.w / 2.0;
+        let cy = spacing + (row as f32) * (n.h + spacing) + n.h / 2.0;
+        NodeOut { id: n.id.clone(), cx, cy }
+    }).collect();
+    
+    serde_wasm_bindgen::to_value(&outputs).unwrap_or(JsValue::NULL)
+}
