@@ -1,21 +1,23 @@
 export * from './types';
-export { Lexer } from './lexer';
-export { Parser } from './parser';
-export { SceneState, Interpreter } from './renderer';
+
+// Re-export specific types for convenience
+export type {
+  CanvasSize,
+  Canvas,
+  Shape,
+  Style,
+  Transform,
+  Token,
+  TokenType,
+} from './types';
+
 export {
-  fnv1a,
-  computeId,
-  indexScene,
-  diff,
-  RenderCache,
-  type ContentHash,
-  type ElementId,
-  type IndexedElement,
-  type SceneIndex,
-  type IndexableScene,
-  type DiffOp,
-  type DiffResult,
-} from './diff';
+  CANVAS_SIZES,
+  ALL_SIZES,
+  getSizePixels,
+  isValidSize,
+  createCanvas,
+} from './types';
 
 // Text metrics (WASM-accelerated)
 export {
@@ -23,4 +25,8 @@ export {
   computeTextBoundsWasm,
   type TextMetrics,
 } from './wasm-renderer';
+
+// DSL Processing - uses Rust WASM as single source of truth
+// Use initWasm() first, then getWasm().tokenize() / getWasm().parse()
+export { initWasm, getWasm, tryGetWasm, isWasmLoaded } from '../wasm/bridge';
 

@@ -15,6 +15,12 @@ export interface WasmCore {
   parse(source: string): string;  // Returns JSON AST
   parse_with_errors(source: string): string;  // Returns {ast, errors} JSON
   
+  // Canvas Size System
+  size_to_pixels(name: string): string | null;  // Returns "[width,height]" or null
+  is_valid_size(name: string): boolean;
+  get_all_sizes(): string;  // Returns JSON array of size names
+  get_size_info(name: string): string;  // Returns {"name","width","height"} or "null"
+  
   // Hashing
   fnv1a_hash(data: string): string;
   compute_element_id(order: number, kind: string, keyJson: string): string;
@@ -35,8 +41,8 @@ export interface WasmCore {
   render_shadow_filter(id: string, dx: number, dy: number, blur: number, color: string): string;
   render_blur_filter(id: string, blur: number): string;
   
-  // Scene
-  render_scene(width: number, height: number, background: string, defs: string, elementsSvg: string): string;
+  // Scene (uses standardized size names)
+  render_scene(sizeName: string, background: string, defs: string, elementsSvg: string): string;
   diff_scenes(oldJson: string, newJson: string): string;
   scenes_equal(oldJson: string, newJson: string): boolean;
   

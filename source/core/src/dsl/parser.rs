@@ -2,7 +2,7 @@
 //!
 //! Parses token stream into AST with error collection and recovery.
 
-use super::lexer::{Token, TokenType, TokenValue};
+use super::lexer::{CanvasSize, Token, TokenType, TokenValue};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -133,18 +133,23 @@ impl AstTransform {
     fn set_origin(&mut self, v: Option<(f64, f64)>) { self.origin = v; }
 }
 
-/// Canvas definition
+/// Canvas definition using standardized sizes
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct AstCanvas {
-    pub width: i32,
-    pub height: i32,
+    pub size: CanvasSize,
     pub fill: String,
+}
+
+impl AstCanvas {
+    pub fn width(&self) -> u32 { self.size.pixels() }
+    pub fn height(&self) -> u32 { self.size.pixels() }
+    pub fn dimensions(&self) -> (u32, u32) { self.size.dimensions() }
 }
 
 impl Default for AstCanvas {
     fn default() -> Self {
-        Self { width: 800, height: 600, fill: "#fff".into() }
+        Self { size: CanvasSize::Medium, fill: "#fff".into() }
     }
 }
 
@@ -152,10 +157,16 @@ impl Default for AstCanvas {
 #[pymethods]
 impl AstCanvas {
     #[new]
-    #[pyo3(signature = (width=800, height=600, fill="#fff".to_string()))]
-    fn py_new(width: i32, height: i32, fill: String) -> Self {
-        Self { width, height, fill }
+    #[pyo3(signature = (size=CanvasSize::Medium, fill="#fff".to_string()))]
+    fn py_new(size: CanvasSize, fill: String) -> Self {
+        Self { size, fill }
     }
+    
+    #[getter]
+    fn get_width(&self) -> u32 { self.width() }
+    
+    #[getter]
+    fn get_height(&self) -> u32 { self.height() }
 }
 
 /// Property value types
@@ -423,16 +434,24 @@ impl Parser {
     fn parse_canvas(&mut self) -> AstNode {
         let mut canvas = AstCanvas::default();
 
-        if self.matches(&[TokenType::Pair]) {
+        // Parse size (required - must be a valid size keyword)
+        if self.matches(&[TokenType::Size]) {
             if let Some(tok) = self.advance() {
-                if let TokenValue::Pair(w, h) = tok.value {
-                    canvas.width = w as i32;
-                    canvas.height = h as i32;
+                if let TokenValue::Str(name) = tok.value.clone() {
+                    if let Some(size) = CanvasSize::from_str(&name) {
+                        canvas.size = size;
+                    } else {
+                        self.error(&format!("Invalid canvas size '{}'. Valid sizes: {}", name, CanvasSize::all_names().join(", ")));
+                    }
                 }
             }
+        } else if self.matches(&[TokenType::Pair]) {
+            // Legacy support: emit error for raw dimensions
+            self.error(&format!("Raw pixel dimensions are not allowed. Use a standard size: {}", CanvasSize::all_names().join(", ")));
+            self.advance(); // consume the pair token
         }
 
-        while self.matches(&[TokenType::Ident]) {
+        while self.matches(&[TokenType::Ident, TokenType::Size]) {
             let prop = self.current().and_then(|t| match &t.value {
                 TokenValue::Str(s) => Some(s.clone()),
                 _ => None,
@@ -1048,8 +1067,9 @@ fn ast_node_to_py(py: Python<'_>, node: &AstNode) -> PyObject {
         }
         AstNode::Canvas(c) => {
             let canvas = PyDict::new(py);
-            canvas.set_item("width", c.width).ok();
-            canvas.set_item("height", c.height).ok();
+            canvas.set_item("size", c.size.to_string()).ok();
+            canvas.set_item("width", c.width()).ok();
+            canvas.set_item("height", c.height()).ok();
             canvas.set_item("fill", &c.fill).ok();
             dict.set_item("Canvas", canvas).ok();
         }
@@ -1210,18 +1230,35 @@ mod tests {
 
     #[test]
     fn test_canvas() {
-        let ast = parse_source("canvas 800x600 fill #1a1a2e");
+        let ast = parse_source("canvas large fill #1a1a2e");
         if let AstNode::Scene(children) = ast {
             assert_eq!(children.len(), 1);
             if let AstNode::Canvas(c) = &children[0] {
-                assert_eq!(c.width, 800);
-                assert_eq!(c.height, 600);
+                assert_eq!(c.size, CanvasSize::Large);
+                assert_eq!(c.width(), 96);
+                assert_eq!(c.height(), 96);
                 assert_eq!(c.fill, "#1a1a2e");
             } else {
                 panic!("Expected Canvas");
             }
         } else {
             panic!("Expected Scene");
+        }
+    }
+    
+    #[test]
+    fn test_canvas_sizes() {
+        for (name, expected_px) in [("nano", 16), ("micro", 24), ("tiny", 32), ("small", 48), 
+                                     ("medium", 64), ("large", 96), ("xlarge", 128), 
+                                     ("huge", 192), ("massive", 256), ("giant", 512)] {
+            let ast = parse_source(&format!("canvas {}", name));
+            if let AstNode::Scene(children) = ast {
+                if let AstNode::Canvas(c) = &children[0] {
+                    assert_eq!(c.width(), expected_px as u32, "Size {} should be {}px", name, expected_px);
+                } else {
+                    panic!("Expected Canvas for size {}", name);
+                }
+            }
         }
     }
 

@@ -20,6 +20,7 @@ pub enum TokenType {
     Color,
     Var,
     Pair,
+    Size,
     Colon,
     Equals,
     Arrow,
@@ -29,6 +30,70 @@ pub enum TokenType {
     Indent,
     Dedent,
     Eof,
+}
+
+/// Standard canvas sizes (10-tier system)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "python", pyclass)]
+#[cfg_attr(feature = "wasm", wasm_bindgen::prelude::wasm_bindgen)]
+pub enum CanvasSize {
+    Nano = 16,      // 16×16 - Favicons, tiny UI
+    Micro = 24,     // 24×24 - Small UI icons
+    Tiny = 32,      // 32×32 - Standard UI icons
+    Small = 48,     // 48×48 - Toolbar icons
+    Medium = 64,    // 64×64 - Medium icons
+    Large = 96,     // 96×96 - Large display icons
+    XLarge = 128,   // 128×128 - Small app icons
+    Huge = 192,     // 192×192 - Touch/PWA icons
+    Massive = 256,  // 256×256 - Medium app icons
+    Giant = 512,    // 512×512 - Large app icons
+}
+
+impl CanvasSize {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "nano" => Some(Self::Nano),
+            "micro" => Some(Self::Micro),
+            "tiny" => Some(Self::Tiny),
+            "small" => Some(Self::Small),
+            "medium" => Some(Self::Medium),
+            "large" => Some(Self::Large),
+            "xlarge" | "xl" => Some(Self::XLarge),
+            "huge" => Some(Self::Huge),
+            "massive" => Some(Self::Massive),
+            "giant" => Some(Self::Giant),
+            _ => None,
+        }
+    }
+    pub fn pixels(self) -> u32 { self as u32 }
+    pub fn dimensions(self) -> (u32, u32) { let p = self.pixels(); (p, p) }
+    
+    /// All valid size names for error messages
+    pub fn all_names() -> &'static [&'static str] {
+        &["nano", "micro", "tiny", "small", "medium", "large", "xlarge", "huge", "massive", "giant"]
+    }
+}
+
+impl std::fmt::Display for CanvasSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Self::Nano => "nano", Self::Micro => "micro", Self::Tiny => "tiny",
+            Self::Small => "small", Self::Medium => "medium", Self::Large => "large",
+            Self::XLarge => "xlarge", Self::Huge => "huge", Self::Massive => "massive",
+            Self::Giant => "giant",
+        };
+        write!(f, "{}", name)
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl CanvasSize {
+    #[staticmethod]
+    fn from_name(name: &str) -> Option<Self> { Self::from_str(name) }
+    fn to_pixels(&self) -> u32 { self.pixels() }
+    fn to_dimensions(&self) -> (u32, u32) { self.dimensions() }
+    fn __repr__(&self) -> String { format!("CanvasSize.{} ({}px)", self, self.pixels()) }
 }
 
 #[cfg(feature = "python")]
@@ -151,6 +216,8 @@ impl Lexer {
             Pattern { regex: Regex::new(r"^->").unwrap(), ttype: Some(TokenType::Arrow) },
             Pattern { regex: Regex::new(r"^:").unwrap(), ttype: Some(TokenType::Colon) },
             Pattern { regex: Regex::new(r"^=").unwrap(), ttype: Some(TokenType::Equals) },
+            // Size keywords before general identifiers
+            Pattern { regex: Regex::new(r"^(nano|micro|tiny|small|medium|large|xlarge|xl|huge|massive|giant)\b").unwrap(), ttype: Some(TokenType::Size) },
             Pattern { regex: Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_-]*").unwrap(), ttype: Some(TokenType::Ident) },
         ]
     }
@@ -271,6 +338,7 @@ impl Lexer {
                     TokenValue::Pair(0.0, 0.0)
                 }
             }
+            TokenType::Size => TokenValue::Str(raw.to_lowercase()),
             _ => TokenValue::Str(raw.to_string()),
         }
     }

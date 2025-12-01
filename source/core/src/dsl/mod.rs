@@ -3,7 +3,7 @@
 mod lexer;
 mod parser;
 
-pub use lexer::{Lexer, Token, TokenType, TokenValue};
+pub use lexer::{CanvasSize, Lexer, Token, TokenType, TokenValue};
 pub use parser::{
     AstCanvas, AstNode, AstShape, AstStyle, AstTransform,
     GradientDef, ParseError, Parser, PropValue, ShadowDef,

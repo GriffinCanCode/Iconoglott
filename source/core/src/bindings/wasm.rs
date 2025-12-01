@@ -8,12 +8,54 @@
 
 use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
+use crate::CanvasSize;
 
 // Initialize panic hook for better error messages in WASM
 #[wasm_bindgen(start)]
 pub fn init() {
     #[cfg(feature = "wasm")]
     console_error_panic_hook::set_once();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Canvas Size System
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Get pixel dimensions for a named size
+/// Returns [width, height] or null if invalid
+#[wasm_bindgen]
+pub fn size_to_pixels(name: &str) -> JsValue {
+    match CanvasSize::from_str(name) {
+        Some(size) => {
+            let (w, h) = size.dimensions();
+            JsValue::from_str(&format!("[{},{}]", w, h))
+        }
+        None => JsValue::NULL,
+    }
+}
+
+/// Check if a size name is valid
+#[wasm_bindgen]
+pub fn is_valid_size(name: &str) -> bool {
+    CanvasSize::from_str(name).is_some()
+}
+
+/// Get all valid size names as JSON array
+#[wasm_bindgen]
+pub fn get_all_sizes() -> String {
+    serde_json::to_string(&CanvasSize::all_names()).unwrap_or_else(|_| "[]".into())
+}
+
+/// Get size info as JSON: {"name": "...", "width": N, "height": N}
+#[wasm_bindgen]
+pub fn get_size_info(name: &str) -> String {
+    match CanvasSize::from_str(name) {
+        Some(size) => {
+            let (w, h) = size.dimensions();
+            format!(r#"{{"name":"{}","width":{},"height":{}}}"#, size, w, h)
+        }
+        None => "null".into(),
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -257,8 +299,7 @@ struct DiffInput {
 
 #[derive(Serialize, Deserialize)]
 struct CanvasInput {
-    width: u32,
-    height: u32,
+    size: String,  // Size name (nano, micro, tiny, small, medium, large, xlarge, huge, massive, giant)
     fill: String,
 }
 
@@ -305,8 +346,7 @@ pub fn diff_scenes(old_json: &str, new_json: &str) -> String {
     };
 
     // Canvas change = full redraw
-    if old.canvas.width != new.canvas.width || 
-       old.canvas.height != new.canvas.height || 
+    if old.canvas.size != new.canvas.size || 
        old.canvas.fill != new.canvas.fill {
         return serde_json::to_string(&DiffResult {
             ops: vec![DiffOp { op_type: "full_redraw".into(), id: None, idx: None, svg: None, from_idx: None, to_idx: None }],
@@ -401,8 +441,7 @@ pub fn scenes_equal(old_json: &str, new_json: &str) -> bool {
     
     match (old, new) {
         (Ok(o), Ok(n)) => {
-            o.canvas.width == n.canvas.width &&
-            o.canvas.height == n.canvas.height &&
+            o.canvas.size == n.canvas.size &&
             o.canvas.fill == n.canvas.fill &&
             o.elements.len() == n.elements.len() &&
             o.defs == n.defs &&
@@ -416,8 +455,13 @@ pub fn scenes_equal(old_json: &str, new_json: &str) -> bool {
 // Scene Rendering (Full SVG output)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Render complete scene SVG using standardized size
 #[wasm_bindgen]
-pub fn render_scene(width: u32, height: u32, background: &str, defs: &str, elements_svg: &str) -> String {
+pub fn render_scene(size_name: &str, background: &str, defs: &str, elements_svg: &str) -> String {
+    let (width, height) = CanvasSize::from_str(size_name)
+        .map(|s| s.dimensions())
+        .unwrap_or((64, 64)); // Default to medium if invalid
+    
     let mut svg = format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}">"#, width, height);
     svg.push_str(&format!(r#"<rect width="100%" height="100%" fill="{}"/>"#, background));
     

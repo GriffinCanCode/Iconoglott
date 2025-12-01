@@ -188,7 +188,7 @@ export interface WasmDiffResult {
 }
 
 export interface WasmSceneInput {
-  canvas: { width: number; height: number; fill: string };
+  canvas: { size: string; fill: string };
   elements: Array<{ id: string; kind: string; svg: string }>;
   defs: string;
 }
@@ -274,6 +274,6 @@ export function renderSceneWasm(
   defs: string,
   elementsSvg: string
 ): string {
-  return wasm.render_scene(canvas.width, canvas.height, canvas.fill, defs, elementsSvg);
+  return wasm.render_scene(canvas.size, canvas.fill, defs, elementsSvg);
 }
 
