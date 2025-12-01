@@ -600,3 +600,295 @@ fn html_escape(s: &str) -> String {
 fn transform_attr(tf: &Option<String>) -> String {
     tf.as_ref().map_or(String::new(), |t| format!(r#" transform="{}""#, t))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_style(fill: Option<&str>, stroke: Option<&str>, sw: f32, op: f32, corner: f32, filter: Option<&str>) -> Style {
+        Style { fill: fill.map(String::from), stroke: stroke.map(String::from), stroke_width: sw, opacity: op, corner, filter: filter.map(String::from) }
+    }
+
+    fn make_rect(x: f32, y: f32, w: f32, h: f32, rx: f32, style: Option<Style>, transform: Option<String>) -> Rect {
+        Rect { x, y, w, h, rx, style: style.unwrap_or_default(), transform }
+    }
+
+    fn make_circle(cx: f32, cy: f32, r: f32, style: Option<Style>, transform: Option<String>) -> Circle {
+        Circle { cx, cy, r, style: style.unwrap_or_default(), transform }
+    }
+
+    fn make_ellipse(cx: f32, cy: f32, rx: f32, ry: f32, style: Option<Style>, transform: Option<String>) -> Ellipse {
+        Ellipse { cx, cy, rx, ry, style: style.unwrap_or_default(), transform }
+    }
+
+    fn make_line(x1: f32, y1: f32, x2: f32, y2: f32, style: Option<Style>, transform: Option<String>) -> Line {
+        let mut s = style.unwrap_or_default();
+        if s.stroke.is_none() { s.stroke = Some("#000".into()); }
+        Line { x1, y1, x2, y2, style: s, transform }
+    }
+
+    fn make_path(d: &str, style: Option<Style>, transform: Option<String>, bounds_hint: Option<(f32, f32, f32, f32)>) -> Path {
+        Path { d: d.to_string(), style: style.unwrap_or_default(), transform, bounds_hint }
+    }
+
+    fn make_polygon(points: Vec<(f32, f32)>, style: Option<Style>, transform: Option<String>) -> Polygon {
+        Polygon { points, style: style.unwrap_or_default(), transform }
+    }
+
+    fn make_text(x: f32, y: f32, content: &str, font: &str, size: f32, weight: &str, anchor: &str, style: Option<Style>, transform: Option<String>) -> Text {
+        Text { x, y, content: content.to_string(), font: font.to_string(), size, weight: weight.to_string(), anchor: anchor.to_string(), style: style.unwrap_or_default(), transform }
+    }
+
+    fn make_image(x: f32, y: f32, w: f32, h: f32, href: &str, transform: Option<String>) -> Image {
+        Image { x, y, w, h, href: href.to_string(), transform }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Color tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_color_default() {
+        let c = Color::default();
+        assert_eq!((c.r, c.g, c.b), (0, 0, 0));
+    }
+
+    #[test]
+    fn test_color_to_css() {
+        let c = Color { r: 100, g: 150, b: 200, a: 0.8 };
+        assert_eq!(c.to_css(), "rgba(100,150,200,0.8)");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Style tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_style_default() {
+        let s = Style::default();
+        assert!(s.fill.is_none());
+        // Default for f32 is 0.0, not 1.0
+        assert!((s.opacity - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_style_to_svg_attrs_empty() {
+        // Default has opacity=0, which gets rendered as opacity="0"
+        let s = Style::default();
+        // When opacity < 1.0, it's included in attrs
+        assert!(s.to_svg_attrs().contains("opacity"));
+    }
+
+    #[test]
+    fn test_style_to_svg_attrs_fill() {
+        let s = make_style(Some("#ff0"), None, 1.0, 1.0, 0.0, None);
+        assert!(s.to_svg_attrs().contains("fill=\"#ff0\""));
+    }
+
+    #[test]
+    fn test_style_to_svg_attrs_stroke() {
+        let s = make_style(None, Some("#000"), 2.0, 1.0, 0.0, None);
+        let attrs = s.to_svg_attrs();
+        assert!(attrs.contains("stroke=\"#000\""));
+        assert!(attrs.contains("stroke-width=\"2\""));
+    }
+
+    #[test]
+    fn test_style_to_svg_attrs_opacity() {
+        let s = make_style(None, None, 1.0, 0.5, 0.0, None);
+        assert!(s.to_svg_attrs().contains("opacity=\"0.5\""));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Rect tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_rect_to_svg_basic() {
+        let r = make_rect(10.0, 20.0, 100.0, 50.0, 0.0, None, None);
+        let svg = r.to_svg();
+        assert!(svg.starts_with("<rect "));
+        assert!(svg.contains(r#"x="10""#));
+    }
+
+    #[test]
+    fn test_rect_to_svg_rounded() {
+        let r = make_rect(0.0, 0.0, 50.0, 50.0, 8.0, None, None);
+        assert!(r.to_svg().contains(r#"rx="8""#));
+    }
+
+    #[test]
+    fn test_rect_bounds() {
+        let r = make_rect(10.0, 20.0, 100.0, 50.0, 0.0, None, None);
+        assert_eq!(r.bounds(), (10.0, 20.0, 100.0, 50.0));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Circle tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_circle_to_svg() {
+        let c = make_circle(50.0, 60.0, 25.0, None, None);
+        let svg = c.to_svg();
+        assert!(svg.contains(r#"cx="50""#));
+        assert!(svg.contains(r#"r="25""#));
+    }
+
+    #[test]
+    fn test_circle_bounds() {
+        let c = make_circle(100.0, 100.0, 50.0, None, None);
+        let (x, _, w, _) = c.bounds();
+        assert!((x - 50.0).abs() < 0.001);
+        assert!((w - 100.0).abs() < 0.001);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Ellipse tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_ellipse_to_svg() {
+        let e = make_ellipse(100.0, 50.0, 80.0, 40.0, None, None);
+        let svg = e.to_svg();
+        assert!(svg.contains(r#"rx="80""#));
+        assert!(svg.contains(r#"ry="40""#));
+    }
+
+    #[test]
+    fn test_ellipse_bounds() {
+        let e = make_ellipse(100.0, 100.0, 50.0, 30.0, None, None);
+        let (_, _, w, h) = e.bounds();
+        assert!((w - 100.0).abs() < 0.001);
+        assert!((h - 60.0).abs() < 0.001);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Line tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_line_to_svg() {
+        let l = make_line(0.0, 0.0, 100.0, 100.0, None, None);
+        let svg = l.to_svg();
+        assert!(svg.contains(r#"x1="0""#));
+        assert!(svg.contains(r#"x2="100""#));
+    }
+
+    #[test]
+    fn test_line_bounds() {
+        let l = make_line(10.0, 20.0, 50.0, 80.0, None, None);
+        let (x, y, w, h) = l.bounds();
+        assert!((x - 10.0).abs() < 0.001);
+        assert!((y - 20.0).abs() < 0.001);
+        assert!((w - 40.0).abs() < 0.001);
+        assert!((h - 60.0).abs() < 0.001);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Path tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_path_to_svg() {
+        let p = make_path("M 0 0 L 100 100", None, None, None);
+        assert!(p.to_svg().contains(r#"d="M 0 0 L 100 100""#));
+    }
+
+    #[test]
+    fn test_path_bounds_hint() {
+        let p = make_path("M 0 0", None, None, Some((5.0, 10.0, 90.0, 80.0)));
+        assert_eq!(p.bounds(), (5.0, 10.0, 90.0, 80.0));
+    }
+
+    #[test]
+    fn test_path_bounds_parsed() {
+        let p = make_path("M 10 20 L 50 80", None, None, None);
+        let (x, y, w, h) = p.bounds();
+        assert!((x - 10.0).abs() < 0.001);
+        assert!((y - 20.0).abs() < 0.001);
+        assert!((w - 40.0).abs() < 0.001);
+        assert!((h - 60.0).abs() < 0.001);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Polygon tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_polygon_to_svg() {
+        let p = make_polygon(vec![(0.0, 0.0), (100.0, 0.0), (50.0, 100.0)], None, None);
+        assert!(p.to_svg().contains(r#"points="#));
+    }
+
+    #[test]
+    fn test_polygon_bounds() {
+        let p = make_polygon(vec![(10.0, 20.0), (90.0, 30.0), (50.0, 80.0)], None, None);
+        let (x, y, w, h) = p.bounds();
+        assert!((x - 10.0).abs() < 0.001);
+        assert!((y - 20.0).abs() < 0.001);
+        assert!((w - 80.0).abs() < 0.001);
+        assert!((h - 60.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_polygon_bounds_empty() {
+        let p = make_polygon(vec![], None, None);
+        assert_eq!(p.bounds(), (0.0, 0.0, 0.0, 0.0));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Text tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_text_to_svg() {
+        let t = make_text(10.0, 20.0, "Hello", "Arial", 16.0, "normal", "start", None, None);
+        let svg = t.to_svg();
+        assert!(svg.contains(">Hello</text>"));
+        assert!(svg.contains(r#"font-family="Arial""#));
+    }
+
+    #[test]
+    fn test_text_escapes_html() {
+        let t = make_text(0.0, 0.0, "<script>&", "Arial", 12.0, "normal", "start", None, None);
+        let svg = t.to_svg();
+        assert!(svg.contains("&lt;script&gt;&amp;"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Image tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_image_to_svg() {
+        let i = make_image(10.0, 20.0, 100.0, 80.0, "img.png", None);
+        let svg = i.to_svg();
+        assert!(svg.contains(r#"href="img.png""#));
+    }
+
+    #[test]
+    fn test_image_bounds() {
+        let i = make_image(10.0, 20.0, 100.0, 80.0, "", None);
+        assert_eq!(i.bounds(), (10.0, 20.0, 100.0, 80.0));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Helper tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_html_escape() {
+        assert_eq!(html_escape("<>&\""), "&lt;&gt;&amp;&quot;");
+    }
+
+    #[test]
+    fn test_transform_attr_none() {
+        assert_eq!(transform_attr(&None), "");
+    }
+
+    #[test]
+    fn test_transform_attr_some() {
+        assert_eq!(transform_attr(&Some("rotate(45)".into())), r#" transform="rotate(45)""#);
+    }
+}

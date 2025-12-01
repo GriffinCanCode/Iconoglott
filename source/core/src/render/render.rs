@@ -2,7 +2,7 @@
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use crate::diff::{self, DiffOp, IndexedScene};
+use super::diff::{self, DiffOp, IndexedScene};
 use crate::scene::Scene;
 
 /// Compute diff between two scenes for minimal updates

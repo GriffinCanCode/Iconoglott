@@ -4,9 +4,8 @@
 //! with minimal SVG regeneration. Inspired by VDOM reconciliation algorithms.
 
 use std::collections::HashMap;
-use crate::id::{ContentHash, ElementId, ElementKind, Fnv1a, IdGen};
-use crate::scene::{Element, Scene};
-use crate::shape::Style;
+use crate::hash::{ContentHash, ElementId, ElementKind, Fnv1a, IdGen};
+use crate::scene::{Element, Scene, Style};
 
 /// Indexed element with stable identity and content hash
 #[derive(Debug, Clone)]
@@ -321,7 +320,7 @@ pub type Patch = DiffOp;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shape::{Circle, Ellipse, Image, Line, Path, Polygon, Rect, Style, Text};
+    use crate::scene::{Circle, Ellipse, Image, Line, Path, Polygon, Rect, Style, Text};
 
     fn make_scene(w: u32, h: u32, bg: &str) -> Scene {
         Scene::new_internal(w, h, bg.to_string())

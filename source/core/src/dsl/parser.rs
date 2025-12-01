@@ -2,7 +2,7 @@
 //!
 //! Parses token stream into AST with error collection and recovery.
 
-use crate::lexer::{Token, TokenType, TokenValue};
+use super::lexer::{Token, TokenType, TokenValue};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -1139,7 +1139,7 @@ use wasm_bindgen::prelude::*;
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn parse(source: &str) -> String {
-    let mut lexer = crate::lexer::Lexer::new(source);
+    let mut lexer = super::lexer::Lexer::new(source);
     let tokens = lexer.tokenize();
     let mut parser = Parser::new(tokens);
     let ast = parser.parse();
@@ -1150,7 +1150,7 @@ pub fn parse(source: &str) -> String {
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn parse_with_errors(source: &str) -> String {
-    let mut lexer = crate::lexer::Lexer::new(source);
+    let mut lexer = super::lexer::Lexer::new(source);
     let tokens = lexer.tokenize();
     let mut parser = Parser::new(tokens);
     let ast = parser.parse();
@@ -1168,7 +1168,7 @@ pub fn parse_with_errors(source: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lexer::Lexer;
+    use crate::dsl::Lexer;
 
     fn parse_source(source: &str) -> AstNode {
         let mut lexer = Lexer::new(source);

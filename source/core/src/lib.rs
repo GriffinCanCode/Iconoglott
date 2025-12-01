@@ -9,27 +9,21 @@
 //! Targets:
 //! - Python: `cargo build --features python` (PyO3 bindings)
 //! - WASM: `wasm-pack build --features wasm` (wasm-bindgen)
+//! - Bench: `cargo bench --features bench` (Criterion benchmarks)
 
 // Core modules (always compiled)
-mod id;
-pub mod lexer;
-pub mod parser;
+mod hash;
+mod dsl;
 
-// Python-specific modules (only with python feature)
-#[cfg(feature = "python")]
-mod cache;
-#[cfg(feature = "python")]
-mod diff;
-#[cfg(feature = "python")]
-mod render;
-#[cfg(feature = "python")]
-mod scene;
-#[cfg(feature = "python")]
-mod shape;
+// Scene/rendering modules (python or bench feature)
+#[cfg(any(feature = "python", feature = "bench"))]
+pub mod scene;
+#[cfg(any(feature = "python", feature = "bench"))]
+pub mod render;
 
-// WASM module (only with wasm feature)
+// Platform bindings (WASM, etc.)
 #[cfg(feature = "wasm")]
-mod wasm;
+mod bindings;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Python Bindings (via PyO3)
@@ -43,33 +37,33 @@ use pyo3::prelude::*;
 #[pymodule]
 fn iconoglott_core(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     // Lexer & Parser (core DSL processing)
-    m.add_class::<lexer::TokenType>()?;
-    m.add_class::<lexer::Token>()?;
-    m.add_class::<lexer::Lexer>()?;
-    m.add_class::<parser::Parser>()?;
-    m.add_class::<parser::AstCanvas>()?;
-    m.add_class::<parser::AstShape>()?;
-    m.add_class::<parser::AstStyle>()?;
-    m.add_class::<parser::AstTransform>()?;
-    m.add_class::<parser::ShadowDef>()?;
-    m.add_class::<parser::GradientDef>()?;
-    m.add_class::<parser::ParseError>()?;
+    m.add_class::<dsl::TokenType>()?;
+    m.add_class::<dsl::Token>()?;
+    m.add_class::<dsl::Lexer>()?;
+    m.add_class::<dsl::Parser>()?;
+    m.add_class::<dsl::AstCanvas>()?;
+    m.add_class::<dsl::AstShape>()?;
+    m.add_class::<dsl::AstStyle>()?;
+    m.add_class::<dsl::AstTransform>()?;
+    m.add_class::<dsl::ShadowDef>()?;
+    m.add_class::<dsl::GradientDef>()?;
+    m.add_class::<dsl::ParseError>()?;
     // Scene & definitions
     m.add_class::<scene::Scene>()?;
     m.add_class::<scene::Gradient>()?;
     m.add_class::<scene::Filter>()?;
     // Shapes
-    m.add_class::<shape::Rect>()?;
-    m.add_class::<shape::Circle>()?;
-    m.add_class::<shape::Ellipse>()?;
-    m.add_class::<shape::Line>()?;
-    m.add_class::<shape::Path>()?;
-    m.add_class::<shape::Polygon>()?;
-    m.add_class::<shape::Text>()?;
-    m.add_class::<shape::Image>()?;
+    m.add_class::<scene::Rect>()?;
+    m.add_class::<scene::Circle>()?;
+    m.add_class::<scene::Ellipse>()?;
+    m.add_class::<scene::Line>()?;
+    m.add_class::<scene::Path>()?;
+    m.add_class::<scene::Polygon>()?;
+    m.add_class::<scene::Text>()?;
+    m.add_class::<scene::Image>()?;
     // Utilities
-    m.add_class::<shape::Style>()?;
-    m.add_class::<shape::Color>()?;
+    m.add_class::<scene::Style>()?;
+    m.add_class::<scene::Color>()?;
     // Diffing
     m.add_class::<render::RenderPatch>()?;
     m.add_function(wrap_pyfunction!(render::compute_patches, m)?)?;
@@ -82,20 +76,31 @@ fn iconoglott_core(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
 // Re-exports for library consumers
 // ─────────────────────────────────────────────────────────────────────────────
 
-pub use id::{ContentHash, ElementId, ElementKind, Fnv1a, IdGen};
+// Core ID/hashing (always available)
+pub use hash::{ContentHash, ElementId, ElementKind, Fnv1a, IdGen};
 
-// Lexer & Parser (always available)
-pub use lexer::{Lexer, Token, TokenType, TokenValue};
-pub use parser::{
-    AstCanvas, AstNode, AstShape, AstStyle, AstTransform, 
-    GradientDef, ParseError, Parser, PropValue, ShadowDef,
+// Lexer & Parser (always available) - re-export from dsl module
+pub use dsl::{
+    AstCanvas, AstNode, AstShape, AstStyle, AstTransform,
+    GradientDef, Lexer, ParseError, Parser, PropValue, ShadowDef,
+    Token, TokenType, TokenValue,
 };
 
-#[cfg(feature = "python")]
-pub use diff::{DiffOp, DiffResult, IndexedScene};
+// Aliased modules for compatibility
+pub mod lexer { pub use crate::dsl::*; }
+pub mod parser { pub use crate::dsl::*; }
+pub mod id { pub use crate::hash::*; }
 
-#[cfg(feature = "python")]
-pub use scene::{Element, Filter, Gradient, Scene};
+#[cfg(any(feature = "python", feature = "bench"))]
+pub use render::{DiffOp, DiffResult, IndexedScene};
 
-#[cfg(feature = "python")]
-pub use shape::{Circle, Color, Ellipse, Image, Line, Path, Polygon, Rect, Style, Text};
+#[cfg(any(feature = "python", feature = "bench"))]
+pub use scene::{Circle, Color, Element, Ellipse, Filter, Gradient, Image, Line, Path, Polygon, Rect, Scene, Style, Text};
+
+// Shape module alias for compatibility
+#[cfg(any(feature = "python", feature = "bench"))]
+pub mod shape { pub use crate::scene::*; }
+
+// Diff module alias for compatibility  
+#[cfg(any(feature = "python", feature = "bench"))]
+pub mod diff { pub use crate::render::*; }
