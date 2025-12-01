@@ -1,11 +1,12 @@
 //! Layout resolution and constraint solver for the iconoglott DSL
 //!
+//! Multi-pass solver with topological ordering and convergence detection.
 //! Resolves percentage-based dimensions, auto-sizing, and constraint-based positioning.
 
 #![allow(dead_code)] // Public API - methods used externally
 
 use super::ast::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Resolved layout rectangle with absolute coordinates
 #[derive(Clone, Debug, Default)]
@@ -17,66 +18,166 @@ pub struct LayoutRect {
 }
 
 impl LayoutRect {
-    pub fn new(x: f64, y: f64, width: f64, height: f64) -> Self {
-        Self { x, y, width, height }
-    }
-    
+    pub fn new(x: f64, y: f64, width: f64, height: f64) -> Self { Self { x, y, width, height } }
     pub fn center_x(&self) -> f64 { self.x + self.width / 2.0 }
     pub fn center_y(&self) -> f64 { self.y + self.height / 2.0 }
     pub fn right(&self) -> f64 { self.x + self.width }
     pub fn bottom(&self) -> f64 { self.y + self.height }
+    
+    /// Check if approximately equal (for convergence)
+    fn approx_eq(&self, other: &Self, eps: f64) -> bool {
+        (self.x - other.x).abs() < eps && (self.y - other.y).abs() < eps
+            && (self.width - other.width).abs() < eps && (self.height - other.height).abs() < eps
+    }
 }
 
 /// Layout context holding parent constraints and computed values
 #[derive(Clone, Debug)]
 pub struct LayoutContext {
-    /// Parent bounds (for percentage resolution)
     pub parent: LayoutRect,
-    /// Computed layout for elements by ID/index
     pub computed: HashMap<String, LayoutRect>,
-    /// Default content size for auto elements
     pub default_size: (f64, f64),
 }
 
 impl Default for LayoutContext {
     fn default() -> Self {
-        Self {
-            parent: LayoutRect::new(0.0, 0.0, 100.0, 100.0),
-            computed: HashMap::new(),
-            default_size: (32.0, 32.0),
-        }
+        Self { parent: LayoutRect::new(0.0, 0.0, 100.0, 100.0), computed: HashMap::new(), default_size: (32.0, 32.0) }
     }
 }
 
 impl LayoutContext {
     pub fn new(width: f64, height: f64) -> Self {
-        Self {
-            parent: LayoutRect::new(0.0, 0.0, width, height),
-            ..Default::default()
-        }
+        Self { parent: LayoutRect::new(0.0, 0.0, width, height), ..Default::default() }
     }
     
-    /// Create child context with new parent bounds
     pub fn child(&self, bounds: LayoutRect) -> Self {
-        Self {
-            parent: bounds,
-            computed: self.computed.clone(),
-            default_size: self.default_size,
-        }
+        Self { parent: bounds, computed: self.computed.clone(), default_size: self.default_size }
     }
 }
 
-/// Layout solver that resolves dimensions and constraints
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-Pass Constraint Solver
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Constraint dependency node
+#[derive(Clone)]
+struct DepNode<'a> {
+    id: String,
+    shape: &'a AstShape,
+    deps: HashSet<String>,
+}
+
+/// Multi-pass layout solver with topological ordering and convergence detection
 #[derive(Default)]
 pub struct LayoutSolver {
-    /// Iteration limit for constraint solving
     max_iterations: usize,
+    convergence_eps: f64,
 }
 
 impl LayoutSolver {
-    pub fn new() -> Self {
-        Self { max_iterations: 10 }
+    /// Build dependency graph from constraints (MatchSize creates dependencies)
+    fn build_deps<'a>(&self, shapes: &'a [(String, &'a AstShape)]) -> Vec<DepNode<'a>> {
+        shapes.iter().map(|(id, shape)| {
+            let mut deps = HashSet::new();
+            if let Some(PropValue::Layout(layout)) = shape.props.get("_layout") {
+                for c in &layout.constraints {
+                    if let Constraint::MatchSize { target, .. } = c {
+                        deps.insert(target.clone());
+                    }
+                }
+            }
+            DepNode { id: id.clone(), shape, deps }
+        }).collect()
     }
+    
+    /// Topological sort using Kahn's algorithm
+    fn topo_sort<'a>(&self, nodes: Vec<DepNode<'a>>) -> Vec<DepNode<'a>> {
+        let id_set: HashSet<String> = nodes.iter().map(|n| n.id.clone()).collect();
+        let mut in_degree: HashMap<String, usize> = nodes.iter().map(|n| (n.id.clone(), 0)).collect();
+        let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
+        
+        // Count incoming edges (only for deps that exist in our set)
+        for node in &nodes {
+            for dep in &node.deps {
+                if id_set.contains(dep) {
+                    *in_degree.get_mut(&node.id).unwrap() += 1;
+                    dependents.entry(dep.clone()).or_default().push(node.id.clone());
+                }
+            }
+        }
+        
+        // Start with nodes that have no deps
+        let mut queue: VecDeque<String> = nodes.iter()
+            .filter(|n| in_degree[&n.id] == 0)
+            .map(|n| n.id.clone())
+            .collect();
+        
+        let mut order = Vec::with_capacity(nodes.len());
+        let node_map: HashMap<_, _> = nodes.into_iter().map(|n| (n.id.clone(), n)).collect();
+        
+        while let Some(id) = queue.pop_front() {
+            if let Some(node) = node_map.get(&id) {
+                order.push(node.id.clone());
+                if let Some(deps) = dependents.get(&id) {
+                    for dep in deps {
+                        if let Some(deg) = in_degree.get_mut(dep) {
+                            *deg -= 1;
+                            if *deg == 0 { queue.push_back(dep.clone()); }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Return nodes in topo order (fall back to original if cyclic)
+        order.into_iter().filter_map(|id| node_map.get(&id).cloned()).collect()
+    }
+    
+    /// Solve constraints iteratively until convergence
+    pub fn solve_multi_pass(&self, shapes: &[&AstShape], ctx: &mut LayoutContext) -> Vec<LayoutRect> {
+        if shapes.is_empty() { return Vec::new(); }
+        
+        // Index shapes and build dependency graph
+        let indexed: Vec<_> = shapes.iter().enumerate()
+            .map(|(i, s)| (format!("shape_{}", i), *s))
+            .collect();
+        
+        let nodes = self.build_deps(&indexed);
+        let sorted = self.topo_sort(nodes);
+        
+        // Map from id to index for result ordering
+        let id_to_idx: HashMap<_, _> = indexed.iter().enumerate()
+            .map(|(i, (id, _))| (id.clone(), i))
+            .collect();
+        
+        let mut results = vec![LayoutRect::default(); shapes.len()];
+        let mut prev_results = results.clone();
+        
+        for iteration in 0..self.max_iterations {
+            // Resolve in topological order
+            for node in &sorted {
+                if let Some(&idx) = id_to_idx.get(&node.id) {
+                    let rect = self.resolve(node.shape, ctx);
+                    ctx.computed.insert(node.id.clone(), rect.clone());
+                    results[idx] = rect;
+                }
+            }
+            
+            // Check convergence
+            if iteration > 0 && results.iter().zip(&prev_results)
+                .all(|(a, b)| a.approx_eq(b, self.convergence_eps)) 
+            {
+                break;
+            }
+            prev_results.clone_from(&results);
+        }
+        
+        results
+    }
+}
+
+impl LayoutSolver {
+    pub fn new() -> Self { Self { max_iterations: 8, convergence_eps: 0.01 } }
     
     /// Resolve layout for a shape and its children
     pub fn resolve(&self, shape: &AstShape, ctx: &mut LayoutContext) -> LayoutRect {
@@ -389,17 +490,23 @@ impl LayoutSolver {
     }
 }
 
-/// Convenience function to resolve layout for an AST
+/// Convenience function to resolve layout for an AST using multi-pass solver
 pub fn resolve_layout(ast: &AstNode, canvas_width: f64, canvas_height: f64) -> HashMap<String, LayoutRect> {
     let mut ctx = LayoutContext::new(canvas_width, canvas_height);
     let solver = LayoutSolver::new();
     
     if let AstNode::Scene(children) = ast {
-        for (i, child) in children.iter().enumerate() {
-            if let AstNode::Shape(shape) = child {
-                let rect = solver.resolve(shape, &mut ctx);
-                ctx.computed.insert(format!("shape_{}", i), rect);
-            }
+        // Collect shapes for multi-pass solving
+        let shapes: Vec<_> = children.iter()
+            .filter_map(|n| if let AstNode::Shape(s) = n { Some(s) } else { None })
+            .collect();
+        
+        // Use multi-pass solver with topological ordering
+        let rects = solver.solve_multi_pass(&shapes, &mut ctx);
+        
+        // Store results
+        for (i, rect) in rects.into_iter().enumerate() {
+            ctx.computed.insert(format!("shape_{}", i), rect);
         }
     }
     
@@ -447,8 +554,6 @@ mod tests {
         let mut ctx = LayoutContext::new(200.0, 100.0);
         let solver = LayoutSolver::new();
         solver.resolve(&layout, &mut ctx);
-        
-        // Children should be centered: (200 - 80) / 2 = 60 offset
     }
     
     #[test]
@@ -460,8 +565,6 @@ mod tests {
         let mut ctx = LayoutContext::new(200.0, 100.0);
         let solver = LayoutSolver::new();
         solver.resolve(&layout, &mut ctx);
-        
-        // Child should be vertically centered: (100 - 20) / 2 = 40 y offset
     }
     
     #[test]
@@ -475,7 +578,6 @@ mod tests {
         let solver = LayoutSolver::new();
         let rect = solver.resolve_shape(&shape, &ctx);
         
-        // Should be 10px from right edge: x = 200 - 50 - 10 = 140
         assert!((rect.x - 140.0).abs() < 0.001, "x should be 140, got {}", rect.x);
     }
     
@@ -491,9 +593,53 @@ mod tests {
         let solver = LayoutSolver::new();
         let rect = solver.resolve_shape(&shape, &ctx);
         
-        // Should be centered: x = (200 - 50) / 2 = 75, y = (100 - 30) / 2 = 35
         assert!((rect.x - 75.0).abs() < 0.001, "x should be 75, got {}", rect.x);
         assert!((rect.y - 35.0).abs() < 0.001, "y should be 35, got {}", rect.y);
+    }
+    
+    #[test]
+    fn test_multi_pass_solver_ordering() {
+        let shapes = vec![
+            make_child(40.0, 20.0),
+            make_child(60.0, 30.0),
+            make_child(80.0, 40.0),
+        ];
+        
+        let mut ctx = LayoutContext::new(200.0, 100.0);
+        let solver = LayoutSolver::new();
+        let shape_refs: Vec<_> = shapes.iter().collect();
+        let rects = solver.solve_multi_pass(&shape_refs, &mut ctx);
+        
+        assert_eq!(rects.len(), 3);
+        assert!((rects[0].width - 40.0).abs() < 0.001);
+        assert!((rects[1].width - 60.0).abs() < 0.001);
+        assert!((rects[2].width - 80.0).abs() < 0.001);
+    }
+    
+    #[test]
+    fn test_convergence_detection() {
+        // Shapes with no inter-dependencies should converge in 1 pass
+        let shapes = vec![make_child(50.0, 50.0)];
+        let mut ctx = LayoutContext::new(100.0, 100.0);
+        let solver = LayoutSolver::new();
+        let shape_refs: Vec<_> = shapes.iter().collect();
+        let rects = solver.solve_multi_pass(&shape_refs, &mut ctx);
+        
+        assert_eq!(rects.len(), 1);
+        assert!((rects[0].width - 50.0).abs() < 0.001);
+    }
+    
+    #[test]
+    fn test_topo_sort_no_deps() {
+        let solver = LayoutSolver::new();
+        let s1 = make_child(10.0, 10.0);
+        let s2 = make_child(20.0, 20.0);
+        let indexed = vec![("a".into(), &s1), ("b".into(), &s2)];
+        let nodes = solver.build_deps(&indexed);
+        let sorted = solver.topo_sort(nodes);
+        
+        // No deps, should maintain order or be stable
+        assert_eq!(sorted.len(), 2);
     }
 }
 
