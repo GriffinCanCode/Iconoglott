@@ -305,6 +305,8 @@ impl Parser {
             "graph" => Some(self.parse_graph()),
             "node" => Some(AstNode::Shape(self.parse_node_as_shape())),
             "edge" => Some(AstNode::Shape(self.parse_edge_as_shape())),
+            "symbol" => Some(self.parse_symbol()),
+            "use" => Some(self.parse_use()),
             _ if SHAPES.contains(cmd.as_str()) => Some(self.parse_shape(&cmd)),
             _ => {
                 // Unknown command - suggest similar valid commands
@@ -323,8 +325,8 @@ impl Parser {
     /// Suggest similar valid commands for typos
     fn suggest_command(cmd: &str) -> Option<String> {
         let all_cmds = ["canvas", "group", "stack", "row", "graph", "node", "edge",
-                        "rect", "circle", "ellipse", "line", "path", "polygon", 
-                        "text", "image", "arc", "curve", "diamond"];
+                        "symbol", "use", "rect", "circle", "ellipse", "line", "path", 
+                        "polygon", "text", "image", "arc", "curve", "diamond"];
         
         // Simple Levenshtein-style matching for common typos
         let cmd_lower = cmd.to_lowercase();
@@ -1251,6 +1253,204 @@ impl Parser {
         if let Some(stroke) = edge.stroke { shape.style.stroke = Some(stroke); }
         shape.style.stroke_width = edge.stroke_width;
         shape
+    }
+
+    /// Parse symbol definition for component reuse (SVG <symbol>)
+    fn parse_symbol(&mut self) -> AstNode {
+        use super::ast::AstSymbol;
+        let mut symbol = AstSymbol::default();
+
+        // Parse symbol ID (required)
+        if self.matches(&[TokenType::String]) {
+            if let Some(tok) = self.advance() {
+                if let TokenValue::Str(s) = &tok.value { symbol.id = s.clone(); }
+            }
+        } else {
+            self.error_at_current("Expected symbol ID (string)", ErrorKind::MissingToken, Some("symbol \"my-icon\""));
+        }
+
+        // Parse optional viewbox
+        while let Some(tok) = self.current() {
+            if self.matches(&[TokenType::Newline, TokenType::Eof]) { break; }
+            match tok.ttype {
+                TokenType::Ident => {
+                    let key = match &tok.value {
+                        TokenValue::Str(s) => s.clone(),
+                        _ => { self.advance(); continue; }
+                    };
+                    self.advance();
+                    if key == "viewbox" && self.matches(&[TokenType::Pair]) {
+                        // Parse viewbox as two pairs: origin and size
+                        if let Some(t1) = self.advance() {
+                            if let TokenValue::Pair(x, y) = t1.value {
+                                if self.matches(&[TokenType::Pair]) {
+                                    if let Some(t2) = self.advance() {
+                                        if let TokenValue::Pair(w, h) = t2.value {
+                                            symbol.viewbox = Some((x, y, w, h));
+                                        }
+                                    }
+                                } else {
+                                    // Single pair - treat as size with 0,0 origin
+                                    symbol.viewbox = Some((0.0, 0.0, x, y));
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => { self.advance(); }
+            }
+        }
+
+        // Parse block with child shapes
+        self.skip_newlines();
+        if self.matches(&[TokenType::Indent]) {
+            self.advance();
+            self.parse_symbol_block(&mut symbol);
+        }
+
+        AstNode::Symbol(symbol)
+    }
+
+    fn parse_symbol_block(&mut self, symbol: &mut super::ast::AstSymbol) {
+        while let Some(tok) = self.current() {
+            if tok.ttype == TokenType::Dedent { self.advance(); break; }
+            if tok.ttype == TokenType::Eof {
+                self.error_at_current("Unexpected end of file in symbol block", ErrorKind::UnterminatedBlock, None);
+                break;
+            }
+
+            self.skip_newlines();
+            if self.matches(&[TokenType::Dedent]) { self.advance(); break; }
+
+            if let Some(tok) = self.current() {
+                if tok.ttype == TokenType::Ident {
+                    let cmd = match &tok.value {
+                        TokenValue::Str(s) => s.clone(),
+                        _ => { self.advance(); continue; }
+                    };
+
+                    if SHAPES.contains(cmd.as_str()) || cmd == "group" {
+                        match self.parse_statement() {
+                            Some(AstNode::Shape(child)) => symbol.children.push(child),
+                            _ => {}
+                        }
+                    } else {
+                        self.error_at_current(
+                            &format!("Only shapes allowed in symbol block, found '{}'", cmd),
+                            ErrorKind::InvalidProperty,
+                            Some("Use rect, circle, path, etc. inside symbol blocks")
+                        );
+                        self.advance();
+                        self.sync_to_line_end();
+                    }
+                } else {
+                    self.advance();
+                }
+            }
+        }
+    }
+
+    /// Parse use reference to instantiate a symbol (SVG <use>)
+    fn parse_use(&mut self) -> AstNode {
+        use super::ast::AstUse;
+        let mut use_ref = AstUse::default();
+
+        // Parse symbol reference (required)
+        if self.matches(&[TokenType::String]) {
+            if let Some(tok) = self.advance() {
+                if let TokenValue::Str(s) = &tok.value { use_ref.href = s.clone(); }
+            }
+        } else {
+            self.error_at_current("Expected symbol reference (string)", ErrorKind::MissingToken, Some("use \"my-icon\""));
+        }
+
+        // Parse inline properties
+        while let Some(tok) = self.current() {
+            if self.matches(&[TokenType::Newline, TokenType::Eof]) { break; }
+            match tok.ttype {
+                TokenType::Pair => {
+                    if let TokenValue::Pair(a, b) = self.advance().map(|t| &t.value).unwrap() {
+                        if use_ref.at.is_none() {
+                            use_ref.at = Some((*a, *b));
+                        } else if use_ref.size.is_none() {
+                            use_ref.size = Some((*a, *b));
+                        }
+                    }
+                }
+                TokenType::Ident => {
+                    let key = match &tok.value {
+                        TokenValue::Str(s) => s.clone(),
+                        _ => { self.advance(); continue; }
+                    };
+                    self.advance();
+
+                    match key.as_str() {
+                        "at" if self.matches(&[TokenType::Pair]) => {
+                            if let Some(t) = self.advance() {
+                                if let TokenValue::Pair(a, b) = t.value {
+                                    use_ref.at = Some((a, b));
+                                }
+                            }
+                        }
+                        "size" if self.matches(&[TokenType::Pair]) => {
+                            if let Some(t) = self.advance() {
+                                if let TokenValue::Pair(a, b) = t.value {
+                                    use_ref.size = Some((a, b));
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                TokenType::Color | TokenType::Var => {
+                    let val = self.resolve(tok);
+                    self.advance();
+                    if let TokenValue::Str(s) = val { use_ref.style.fill = Some(s); }
+                }
+                _ => { self.advance(); }
+            }
+        }
+
+        // Parse optional block for transform/style
+        self.skip_newlines();
+        if self.matches(&[TokenType::Indent]) {
+            self.advance();
+            self.parse_use_block(&mut use_ref);
+        }
+
+        AstNode::Use(use_ref)
+    }
+
+    fn parse_use_block(&mut self, use_ref: &mut super::ast::AstUse) {
+        while let Some(tok) = self.current() {
+            if tok.ttype == TokenType::Dedent { self.advance(); break; }
+            if tok.ttype == TokenType::Eof { break; }
+
+            self.skip_newlines();
+            if self.matches(&[TokenType::Dedent]) { self.advance(); break; }
+
+            if let Some(tok) = self.current() {
+                if tok.ttype == TokenType::Ident {
+                    let prop = match &tok.value {
+                        TokenValue::Str(s) => s.clone(),
+                        _ => { self.advance(); continue; }
+                    };
+
+                    if STYLE_PROPS.contains(prop.as_str()) {
+                        // Create temporary shape to parse style
+                        let mut temp = AstShape::new("_temp");
+                        self.parse_style_prop(&mut temp);
+                        use_ref.style = temp.style;
+                    } else if TRANSFORM_PROPS.contains(prop.as_str()) {
+                        self.parse_transform_prop(&mut use_ref.transform);
+                    } else {
+                        self.advance();
+                    }
+                } else {
+                    self.advance();
+                }
+            }
+        }
     }
 
     pub(crate) fn parse_shape(&mut self, kind: &str) -> AstNode {

@@ -856,3 +856,35 @@ pub fn layout_grid(nodes: JsValue, spacing: f32) -> JsValue {
     
     serde_wasm_bindgen::to_value(&outputs).unwrap_or(JsValue::NULL)
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Symbol & Use (Component Reuse)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Render a symbol definition (goes in <defs>)
+/// content: inner SVG elements as string
+/// viewbox: optional [x, y, width, height]
+#[wasm_bindgen]
+pub fn render_symbol(id: &str, content: &str, viewbox: JsValue) -> String {
+    let vb: Option<[f32; 4]> = serde_wasm_bindgen::from_value(viewbox).ok();
+    let viewbox_attr = vb.map_or(String::new(), |[x, y, w, h]| 
+        format!(r#" viewBox="{} {} {} {}""#, x, y, w, h));
+    format!(r#"<symbol id="{}"{}>{}</symbol>"#, html_escape(id), viewbox_attr, content)
+}
+
+/// Render a use element (references a symbol)
+#[wasm_bindgen]
+pub fn render_use(href: &str, x: f32, y: f32, width: JsValue, height: JsValue, style: JsValue, transform: Option<String>) -> String {
+    let style = WasmStyle::from_js(style);
+    let w: Option<f32> = serde_wasm_bindgen::from_value(width).ok();
+    let h: Option<f32> = serde_wasm_bindgen::from_value(height).ok();
+    let size = match (w, h) {
+        (Some(wv), Some(hv)) => format!(r#" width="{}" height="{}""#, wv, hv),
+        (Some(wv), None) => format!(r#" width="{}""#, wv),
+        (None, Some(hv)) => format!(r#" height="{}""#, hv),
+        _ => String::new(),
+    };
+    let tf = transform.map_or(String::new(), |t| format!(r#" transform="{}""#, t));
+    format!("<use href=\"#{}\" x=\"{}\" y=\"{}\"{}{}{}/>" , 
+        html_escape(href), x, y, size, style.to_svg_attrs(), tf)
+}

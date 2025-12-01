@@ -20,7 +20,7 @@ mod tests;
 
 // Re-export AST types
 pub use ast::{
-    AstCanvas, AstGraph, AstNode, AstShape, AstStyle, AstTransform,
+    AstCanvas, AstGraph, AstNode, AstShape, AstStyle, AstTransform, AstSymbol, AstUse,
     FullStyle, GradientDef, GraphEdge, GraphNode, ParseError, PropValue, ShadowDef,
 };
 

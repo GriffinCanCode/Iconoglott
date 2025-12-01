@@ -4,7 +4,7 @@
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use super::shape::{Circle, Diamond, Edge, Ellipse, Image, Line, Node, Path, Polygon, Rect, Text};
+use super::shape::{Circle, Diamond, Edge, Ellipse, Image, Line, Node, Path, Polygon, Rect, Symbol, Text, Use};
 use crate::CanvasSize;
 
 /// A renderable element in the scene
@@ -16,6 +16,7 @@ pub enum Element {
     Diamond(Diamond), Node(Node), Edge(Edge),
     Group(Vec<Element>, Option<String>),
     Graph(GraphContainer),
+    Use(Use),
 }
 
 /// Container for graph elements with layout info
@@ -139,6 +140,7 @@ impl Element {
             Element::Text(t) => t.to_svg(), Element::Image(i) => i.to_svg(),
             Element::Diamond(d) => d.to_svg(), Element::Node(n) => n.to_svg(),
             Element::Edge(e) => e.to_svg(("arrow-start", "arrow-end")),
+            Element::Use(u) => u.to_svg(),
             Element::Group(children, tf) => {
                 let inner: String = children.iter().map(|e| e.to_svg()).collect();
                 tf.as_ref().map_or_else(|| format!("<g>{}</g>", inner), |t| format!(r#"<g transform="{}">{}</g>"#, t, inner))
@@ -154,6 +156,7 @@ impl Element {
             Element::Text(t) => t.bounds(), Element::Image(i) => i.bounds(),
             Element::Diamond(d) => d.bounds(), Element::Node(n) => n.bounds(),
             Element::Edge(e) => e.bounds(), Element::Graph(g) => g.bounds(),
+            Element::Use(u) => u.bounds(),
             Element::Group(children, _) => {
                 if children.is_empty() { return (0.0, 0.0, 0.0, 0.0); }
                 let (mut min_x, mut min_y, mut max_x, mut max_y) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
@@ -227,11 +230,12 @@ pub struct Scene {
     elements: Vec<Element>,
     gradients: Vec<Gradient>,
     filters: Vec<Filter>,
+    symbols: Vec<Symbol>,
 }
 
 impl Default for Scene {
     fn default() -> Self {
-        Self { size: CanvasSize::Medium, background: "#fff".into(), elements: Vec::new(), gradients: Vec::new(), filters: Vec::new() }
+        Self { size: CanvasSize::Medium, background: "#fff".into(), elements: Vec::new(), gradients: Vec::new(), filters: Vec::new(), symbols: Vec::new() }
     }
 }
 
@@ -241,7 +245,7 @@ impl Scene {
     #[new]
     #[pyo3(signature = (size=CanvasSize::Medium, background="#fff".to_string()))]
     fn py_new(size: CanvasSize, background: String) -> Self {
-        Self { size, background, elements: Vec::new(), gradients: Vec::new(), filters: Vec::new() }
+        Self { size, background, elements: Vec::new(), gradients: Vec::new(), filters: Vec::new(), symbols: Vec::new() }
     }
     #[getter] fn get_size(&self) -> CanvasSize { self.size }
     #[setter] fn set_size(&mut self, v: CanvasSize) { self.size = v; }
@@ -259,14 +263,16 @@ impl Scene {
     fn add_image(&mut self, image: Image) { self.elements.push(Element::Image(image)); }
     fn add_gradient(&mut self, gradient: Gradient) { self.gradients.push(gradient); }
     fn add_filter(&mut self, filter: Filter) { self.filters.push(filter); }
-    fn clear(&mut self) { self.elements.clear(); self.gradients.clear(); self.filters.clear(); }
+    fn add_symbol(&mut self, symbol: Symbol) { self.symbols.push(symbol); }
+    fn add_use(&mut self, use_el: Use) { self.elements.push(Element::Use(use_el)); }
+    fn clear(&mut self) { self.elements.clear(); self.gradients.clear(); self.filters.clear(); self.symbols.clear(); }
     fn count(&self) -> usize { self.elements.len() }
     fn to_svg(&self) -> String { self.render_svg() }
 }
 
 impl Scene {
     pub fn new(size: CanvasSize, background: String) -> Self {
-        Self { size, background, elements: Vec::new(), gradients: Vec::new(), filters: Vec::new() }
+        Self { size, background, elements: Vec::new(), gradients: Vec::new(), filters: Vec::new(), symbols: Vec::new() }
     }
     
     #[inline] pub fn width(&self) -> u32 { self.size.pixels() }
@@ -274,10 +280,12 @@ impl Scene {
     #[inline] pub fn dimensions(&self) -> (u32, u32) { self.size.dimensions() }
     
     pub fn push(&mut self, el: Element) { self.elements.push(el); }
+    pub fn push_symbol(&mut self, sym: Symbol) { self.symbols.push(sym); }
     #[inline] pub fn elements(&self) -> &[Element] { &self.elements }
     #[inline] pub fn elements_mut(&mut self) -> &mut Vec<Element> { &mut self.elements }
     #[inline] pub fn gradients(&self) -> &[Gradient] { &self.gradients }
     #[inline] pub fn filters(&self) -> &[Filter] { &self.filters }
+    #[inline] pub fn symbols(&self) -> &[Symbol] { &self.symbols }
 
     pub fn render_svg(&self) -> String {
         let (w, h) = self.dimensions();
@@ -286,11 +294,13 @@ impl Scene {
         
         // Check if we need arrow markers (for edges/graphs)
         let needs_markers = self.elements.iter().any(|e| matches!(e, Element::Edge(_) | Element::Graph(_)));
+        let needs_defs = !self.gradients.is_empty() || !self.filters.is_empty() || !self.symbols.is_empty() || needs_markers;
         
-        if !self.gradients.is_empty() || !self.filters.is_empty() || needs_markers {
+        if needs_defs {
             svg.push_str("<defs>");
             for g in &self.gradients { svg.push_str(&g.to_svg()); }
             for f in &self.filters { svg.push_str(&f.to_svg()); }
+            for s in &self.symbols { svg.push_str(&s.to_svg_def()); }
             if needs_markers {
                 svg.push_str(&super::shape::arrow_marker_defs("arrow", "#333"));
                 svg.push_str(&super::shape::arrow_marker_defs("graph", "#333"));

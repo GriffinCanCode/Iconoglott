@@ -121,6 +121,8 @@ pub enum ElementKind {
     Node = 12,
     Edge = 13,
     Graph = 14,
+    Use = 15,
+    Symbol = 16,
 }
 
 impl ElementKind {
@@ -143,6 +145,8 @@ impl ElementKind {
             Self::Node => "node",
             Self::Edge => "edge",
             Self::Graph => "graph",
+            Self::Use => "use",
+            Self::Symbol => "symbol",
         }
     }
 }

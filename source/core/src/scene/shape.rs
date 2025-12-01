@@ -738,6 +738,94 @@ pub fn arrow_marker_defs(id_prefix: &str, color: &str) -> String {
     )
 }
 
+/// Symbol definition for reusable components (SVG <symbol>)
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[cfg_attr(feature = "python", pyclass)]
+pub struct Symbol {
+    pub id: String,
+    pub viewbox: Option<(f32, f32, f32, f32)>,
+    pub children: Vec<super::Element>,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl Symbol {
+    #[new]
+    #[pyo3(signature = (id, viewbox=None))]
+    fn py_new(id: String, viewbox: Option<(f32, f32, f32, f32)>) -> Self {
+        Self { id, viewbox, children: Vec::new() }
+    }
+    
+    #[getter] fn get_id(&self) -> String { self.id.clone() }
+    #[setter] fn set_id(&mut self, v: String) { self.id = v; }
+    #[getter] fn get_viewbox(&self) -> Option<(f32, f32, f32, f32)> { self.viewbox }
+    #[setter] fn set_viewbox(&mut self, v: Option<(f32, f32, f32, f32)>) { self.viewbox = v; }
+    fn child_count(&self) -> usize { self.children.len() }
+}
+
+impl Symbol {
+    pub fn to_svg_def(&self) -> String {
+        let viewbox = self.viewbox.map_or(String::new(), |(x, y, w, h)| 
+            format!(r#" viewBox="{} {} {} {}""#, x, y, w, h));
+        let inner: String = self.children.iter().map(|e| e.to_svg()).collect();
+        format!(r#"<symbol id="{}"{}>{}</symbol>"#, html_escape(&self.id), viewbox, inner)
+    }
+    
+    pub fn bounds(&self) -> (f32, f32, f32, f32) {
+        self.viewbox.unwrap_or_else(|| {
+            if self.children.is_empty() { return (0.0, 0.0, 0.0, 0.0); }
+            let (mut min_x, mut min_y, mut max_x, mut max_y) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+            for c in &self.children {
+                let (x, y, w, h) = c.bounds();
+                min_x = min_x.min(x); min_y = min_y.min(y); max_x = max_x.max(x + w); max_y = max_y.max(y + h);
+            }
+            (min_x, min_y, max_x - min_x, max_y - min_y)
+        })
+    }
+}
+
+/// Use reference to instantiate a symbol (SVG <use>)
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[cfg_attr(feature = "python", pyclass(get_all, set_all))]
+pub struct Use {
+    pub href: String,
+    pub x: f32,
+    pub y: f32,
+    pub width: Option<f32>,
+    pub height: Option<f32>,
+    pub style: Style,
+    pub transform: Option<String>,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl Use {
+    #[new]
+    #[pyo3(signature = (href, x=0.0, y=0.0, width=None, height=None, style=None, transform=None))]
+    fn py_new(href: String, x: f32, y: f32, width: Option<f32>, height: Option<f32>, style: Option<Style>, transform: Option<String>) -> Self {
+        Self { href, x, y, width, height, style: style.unwrap_or_default(), transform }
+    }
+}
+
+impl Use {
+    pub fn to_svg(&self) -> String {
+        let size = match (self.width, self.height) {
+            (Some(w), Some(h)) => format!(r#" width="{}" height="{}""#, w, h),
+            (Some(w), None) => format!(r#" width="{}""#, w),
+            (None, Some(h)) => format!(r#" height="{}""#, h),
+            _ => String::new(),
+        };
+        format!("<use href=\"#{}\" x=\"{}\" y=\"{}\"{}{}{}/>" , 
+            html_escape(&self.href), self.x, self.y, size, self.style.to_svg_attrs(), transform_attr(&self.transform))
+    }
+    
+    pub fn bounds(&self) -> (f32, f32, f32, f32) {
+        (self.x, self.y, self.width.unwrap_or(0.0), self.height.unwrap_or(0.0))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

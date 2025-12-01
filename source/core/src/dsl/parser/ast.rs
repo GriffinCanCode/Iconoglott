@@ -467,6 +467,60 @@ impl AstShape {
     fn get_children(&self) -> Vec<AstShape> { self.children.clone() }
 }
 
+/// Symbol definition for reusable components (SVG <symbol>)
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[cfg_attr(feature = "python", pyclass(get_all, set_all))]
+pub struct AstSymbol {
+    pub id: String,
+    pub viewbox: Option<(f64, f64, f64, f64)>, // x, y, width, height
+    pub children: Vec<AstShape>,
+}
+
+impl Default for AstSymbol {
+    fn default() -> Self {
+        Self { id: String::new(), viewbox: None, children: Vec::new() }
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl AstSymbol {
+    #[new]
+    #[pyo3(signature = (id, viewbox=None))]
+    fn py_new(id: String, viewbox: Option<(f64, f64, f64, f64)>) -> Self {
+        Self { id, viewbox, children: Vec::new() }
+    }
+}
+
+/// Use reference for symbol instances (SVG <use>)
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[cfg_attr(feature = "python", pyclass(get_all, set_all))]
+pub struct AstUse {
+    pub href: String,          // Symbol ID reference
+    pub at: Option<(f64, f64)>,
+    pub size: Option<(f64, f64)>,
+    pub transform: AstTransform,
+    pub style: AstStyle,
+}
+
+impl Default for AstUse {
+    fn default() -> Self {
+        Self { href: String::new(), at: None, size: None, transform: AstTransform::default(), style: AstStyle::new() }
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl AstUse {
+    #[new]
+    #[pyo3(signature = (href, at=None, size=None))]
+    fn py_new(href: String, at: Option<(f64, f64)>, size: Option<(f64, f64)>) -> Self {
+        Self { href, at, size, transform: AstTransform::default(), style: AstStyle::new() }
+    }
+}
+
 /// AST node types
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -475,6 +529,8 @@ pub enum AstNode {
     Canvas(AstCanvas),
     Shape(AstShape),
     Graph(AstGraph),
+    Symbol(AstSymbol),
+    Use(AstUse),
     Variable { name: String, value: Option<TokenValue> },
 }
 

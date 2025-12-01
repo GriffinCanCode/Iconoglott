@@ -154,6 +154,16 @@ impl Resolver {
             }
             AstNode::Variable { name, value } => AstNode::Variable { name, value },
             AstNode::Canvas(c) => AstNode::Canvas(self.resolve_canvas(c)),
+            AstNode::Symbol(mut symbol) => {
+                // Resolve children in symbol
+                symbol.children = symbol.children.into_iter().map(|c| self.resolve_shape(c)).collect();
+                AstNode::Symbol(symbol)
+            }
+            AstNode::Use(mut use_ref) => {
+                // Resolve style in use reference
+                use_ref.style = self.resolve_style(use_ref.style);
+                AstNode::Use(use_ref)
+            }
         }
     }
 

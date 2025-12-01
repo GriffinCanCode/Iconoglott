@@ -7,7 +7,7 @@ import { createClient } from '@iconoglott/renderer/client';
 import type { ParseError } from '@iconoglott/renderer';
 
 // Semantic classification for syntax highlighting (presentation layer only)
-const KEYWORDS = new Set(['canvas', 'group', 'stack', 'row', 'graph', 'node', 'edge']);
+const KEYWORDS = new Set(['canvas', 'group', 'stack', 'row', 'graph', 'node', 'edge', 'symbol', 'use']);
 const SHAPES = new Set(['rect', 'circle', 'ellipse', 'line', 'path', 'polygon', 'text', 'image', 'arc', 'curve', 'diamond']);
 const PROPERTIES = new Set([
   'at', 'size', 'radius', 'from', 'to', 'fill', 'stroke', 'opacity', 'corner',
@@ -15,11 +15,11 @@ const PROPERTIES = new Set([
   'translate', 'rotate', 'scale', 'origin', 'width', 'height', 'gap', 'vertical', 'horizontal',
   'linear', 'radial', 'd', 'points', 'href', 'label', 'shape', 'spacing', 'curved', 'straight',
   'orthogonal', 'hierarchical', 'force', 'grid', 'tree', 'manual', 'justify', 'align', 'wrap',
-  'start', 'smooth', 'sharp', 'closed', 'padding', 'anchor', 'auto'
+  'start', 'smooth', 'sharp', 'closed', 'padding', 'anchor', 'auto', 'viewbox'
 ]);
 
 const DEFAULT_CODE = `// Iconoglott — Visual DSL for Vector Graphics
-// Flowchart demo using manual node positioning
+// Demo: Reusable Components with symbol/use
 
 canvas giant fill #0a0f1a
 
@@ -29,7 +29,6 @@ $blue = #3b82f6
 $purple = #8b5cf6
 $amber = #f59e0b
 $cyan = #06b6d4
-$text = #e2e8f0
 
 // ═══════════════════════════════════════════════
 // TITLE
@@ -40,59 +39,75 @@ text "Iconoglott" at 20,30
   fill #fff
   bold
 
-text "DSL → SVG Pipeline" at 20,50
+text "Component Reuse with <symbol> & <use>" at 20,50
   font "Space Grotesk" 11
   fill #64748b
 
 // ═══════════════════════════════════════════════
-// FLOWCHART - Manual layout with exact positions
+// REUSABLE SYMBOLS — Define once, use many times
 // ═══════════════════════════════════════════════
 
-graph manual
-  node "Input" at 256,90 size 80x32
-    shape rect
-    fill $blue
-    label "DSL"
-  
-  node "Lexer" at 256,155 size 80x32
-    shape rect
-    fill $purple
-    label "Lexer"
-  
-  node "Parser" at 256,220 size 80x32
-    shape rect
-    fill $purple
-    label "Parser"
-  
-  node "AST" at 256,290 size 80x36
-    shape diamond
-    fill $accent
-    label "AST"
-  
-  node "Render" at 256,365 size 80x32
-    shape rect
+symbol "star"
+  polygon points [(12,2) (15,9) (22,9) (17,14) (19,22) (12,17) (5,22) (7,14) (2,9) (9,9)]
     fill $amber
-    label "Render"
-  
-  node "SVG" at 256,430 size 80x32
-    shape rect
-    fill $cyan
-    label "SVG"
-  
-  edge "Input" -> "Lexer" curved $text 1.5
-  edge "Lexer" -> "Parser" curved $text 1.5
-  edge "Parser" -> "AST" curved $text 1.5
-  edge "AST" -> "Render" curved $text 1.5
-  edge "Render" -> "SVG" curved $text 1.5
 
-// Decorative accents
-circle at 450,60 radius 18
-  gradient radial #10b981 #0a0f1a
-  opacity 0.6
+symbol "dot"
+  circle 6,6 6
+    gradient radial $accent #0a0f1a
 
-circle at 470,80 radius 10
-  gradient radial #3b82f6 #0a0f1a
-  opacity 0.4`;
+symbol "chip"
+  rect 0,0 size 40,24
+    fill $purple
+    corner 4
+  circle 8,12 3 #fff
+  rect 16,8 size 18,8 #8b5cf620
+    corner 2
+
+// ═══════════════════════════════════════════════
+// INSTANCES — Reuse symbols with transforms
+// ═══════════════════════════════════════════════
+
+// Star constellation
+use "star" at 80,120
+use "star" at 140,100
+  scale 0.7,0.7
+use "star" at 110,160
+  scale 0.5,0.5
+use "star" at 170,140
+  scale 0.8,0.8
+
+// Animated dots pattern
+use "dot" at 280,100
+use "dot" at 320,100
+use "dot" at 360,100
+use "dot" at 300,130
+use "dot" at 340,130
+use "dot" at 320,160
+
+// Circuit board chips
+use "chip" at 60,280
+use "chip" at 120,280
+use "chip" at 180,280
+use "chip" at 90,320
+use "chip" at 150,320
+
+// Labels
+text "Stars" at 80,210
+  font "Space Grotesk" 10
+  fill #64748b
+
+text "Dots" at 300,210
+  font "Space Grotesk" 10
+  fill #64748b
+
+text "Chips" at 100,390
+  font "Space Grotesk" 10
+  fill #64748b
+
+// Background glow
+circle at 450,80 radius 40
+  gradient radial #3b82f630 #0a0f1a
+  opacity 0.5`;
 
 class IconoglottPlayground {
   private editor: HTMLTextAreaElement;

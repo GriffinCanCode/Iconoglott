@@ -43,6 +43,7 @@ fn compute_id(el: &Element, order: u64, kind: ElementKind) -> ElementId {
         Element::Edge(e) => { h.write_str(&e.from_id); h.write_str(&e.to_id); }
         Element::Group(_, tf) => if let Some(t) = tf { h.write_str(t); },
         Element::Graph(g) => { h.write_str(&g.layout); h.write_str(&g.direction); }
+        Element::Use(u) => { h.write_str(&u.href); h.write_f32(u.x); h.write_f32(u.y); }
     }
     
     ElementId::with_key(order, kind.as_u8(), &h.finish().to_le_bytes())
@@ -65,6 +66,7 @@ pub fn element_kind(el: &Element) -> ElementKind {
         Element::Edge(_) => ElementKind::Edge,
         Element::Group(_, _) => ElementKind::Group,
         Element::Graph(_) => ElementKind::Graph,
+        Element::Use(_) => ElementKind::Use,
     }
 }
 
@@ -198,6 +200,7 @@ fn build_defs_svg(scene: &Scene) -> String {
     let mut svg = String::new();
     for g in scene.gradients() { svg.push_str(&g.to_svg()); }
     for f in scene.filters() { svg.push_str(&f.to_svg()); }
+    for s in scene.symbols() { svg.push_str(&s.to_svg_def()); }
     svg
 }
 

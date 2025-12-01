@@ -55,7 +55,44 @@ pub fn ast_node_to_py(py: Python<'_>, node: &AstNode) -> PyObject {
             var.set_item("value", token_value_to_py(py, value.as_ref())).ok();
             dict.set_item("Variable", var).ok();
         }
+        AstNode::Symbol(s) => {
+            dict.set_item("Symbol", ast_symbol_to_py(py, s)).ok();
+        }
+        AstNode::Use(u) => {
+            dict.set_item("Use", ast_use_to_py(py, u)).ok();
+        }
     }
+    dict.into()
+}
+
+/// Convert AstSymbol to Python dict
+pub fn ast_symbol_to_py(py: Python<'_>, symbol: &AstSymbol) -> PyObject {
+    let dict = PyDict::new(py);
+    dict.set_item("id", &symbol.id).ok();
+    dict.set_item("viewbox", symbol.viewbox).ok();
+    let children = PyList::new(py, symbol.children.iter().map(|c| ast_shape_to_py(py, c)));
+    dict.set_item("children", children).ok();
+    dict.into()
+}
+
+/// Convert AstUse to Python dict
+pub fn ast_use_to_py(py: Python<'_>, use_ref: &AstUse) -> PyObject {
+    let dict = PyDict::new(py);
+    dict.set_item("href", &use_ref.href).ok();
+    dict.set_item("at", use_ref.at).ok();
+    dict.set_item("size", use_ref.size).ok();
+    // Convert style
+    let style = PyDict::new(py);
+    style.set_item("fill", use_ref.style.fill.as_deref()).ok();
+    style.set_item("stroke", use_ref.style.stroke.as_deref()).ok();
+    style.set_item("opacity", use_ref.style.opacity).ok();
+    dict.set_item("style", style).ok();
+    // Convert transform
+    let transform = PyDict::new(py);
+    transform.set_item("translate", use_ref.transform.translate).ok();
+    transform.set_item("rotate", use_ref.transform.rotate).ok();
+    transform.set_item("scale", use_ref.transform.scale).ok();
+    dict.set_item("transform", transform).ok();
     dict.into()
 }
 
