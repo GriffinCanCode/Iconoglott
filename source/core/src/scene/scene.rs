@@ -268,6 +268,7 @@ impl Scene {
     fn clear(&mut self) { self.elements.clear(); self.gradients.clear(); self.filters.clear(); self.symbols.clear(); }
     fn count(&self) -> usize { self.elements.len() }
     fn to_svg(&self) -> String { self.render_svg() }
+    fn to_json(&self) -> String { self.render_json() }
 }
 
 impl Scene {
@@ -311,15 +312,40 @@ impl Scene {
         svg.push_str("</svg>");
         svg
     }
-    pub fn to_json(&self) -> String { 
+    /// Output the element tree as structured JSON for debugging and tools integration
+    pub fn render_json(&self) -> String { 
         let (w, h) = self.dimensions();
-        serde_json::json!({"size": self.size.to_string(), "width": w, "height": h, "background": self.background, "element_count": self.elements.len()}).to_string() 
+        serde_json::json!({
+            "size": self.size.to_string(),
+            "width": w,
+            "height": h,
+            "background": self.background,
+            "elements": self.elements,
+            "gradients": self.gradients,
+            "filters": self.filters,
+            "symbols": self.symbols,
+        }).to_string()
     }
+    
+    /// Alias for render_json (available when python feature is disabled)
+    #[cfg(not(feature = "python"))]
+    #[inline]
+    pub fn to_json(&self) -> String { self.render_json() }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::shape::Style;
     #[test] fn test_scene_new() { let s = Scene::new(CanvasSize::Large, "#fff".into()); assert_eq!(s.dimensions(), (96, 96)); }
     #[test] fn test_scene_svg() { let s = Scene::new(CanvasSize::Small, "#000".into()); assert!(s.render_svg().contains("</svg>")); assert!(s.render_svg().contains("48")); }
+    #[test] fn test_scene_json() {
+        let mut s = Scene::new(CanvasSize::Medium, "#f0f0f0".into());
+        s.push(Element::Circle(Circle { cx: 32.0, cy: 32.0, r: 16.0, style: Style::default(), transform: None }));
+        let json = s.render_json();
+        assert!(json.contains("\"size\":\"medium\""));
+        assert!(json.contains("\"width\":64"));
+        assert!(json.contains("\"background\":\"#f0f0f0\""));
+        assert!(json.contains("\"Circle\""));
+    }
 }
