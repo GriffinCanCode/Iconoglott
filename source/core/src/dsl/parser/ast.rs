@@ -253,6 +253,112 @@ impl AstCanvas {
     fn get_height(&self) -> u32 { self.height() }
 }
 
+/// Dimension value type for flexible sizing
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub enum Dimension {
+    /// Absolute pixel value
+    Px(f64),
+    /// Percentage of parent (0-100)
+    Percent(f64),
+    /// Auto-size based on content
+    Auto,
+}
+
+impl Default for Dimension {
+    fn default() -> Self { Self::Auto }
+}
+
+impl Dimension {
+    /// Resolve dimension to absolute pixels given parent size
+    pub fn resolve(&self, parent_size: f64) -> Option<f64> {
+        match self {
+            Self::Px(v) => Some(*v),
+            Self::Percent(p) => Some(parent_size * p / 100.0),
+            Self::Auto => None, // Needs content measurement
+        }
+    }
+    
+    pub fn is_auto(&self) -> bool { matches!(self, Self::Auto) }
+    pub fn is_percent(&self) -> bool { matches!(self, Self::Percent(_)) }
+}
+
+/// Dimension pair for width/height
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DimensionPair {
+    pub width: Dimension,
+    pub height: Dimension,
+}
+
+/// Alignment values for main axis
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub enum JustifyContent {
+    Start,
+    End,
+    Center,
+    SpaceBetween,
+    SpaceAround,
+    SpaceEvenly,
+}
+
+impl Default for JustifyContent {
+    fn default() -> Self { Self::Start }
+}
+
+/// Alignment values for cross axis
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub enum AlignItems {
+    Start,
+    End,
+    Center,
+    Stretch,
+    Baseline,
+}
+
+impl Default for AlignItems {
+    fn default() -> Self { Self::Start }
+}
+
+/// Layout constraint for constraint-based positioning
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub enum Constraint {
+    /// Anchor to parent edge with offset
+    AnchorEdge { edge: Edge, offset: Dimension },
+    /// Center in parent axis
+    CenterAxis { axis: Axis, offset: Dimension },
+    /// Match size of another element
+    MatchSize { target: String, axis: Axis },
+    /// Fill remaining space
+    Fill { weight: f64 },
+}
+
+/// Edge for constraint anchoring
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub enum Edge { Top, Right, Bottom, Left }
+
+/// Axis for layout operations
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub enum Axis { Horizontal, Vertical }
+
+/// Layout properties for containers
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct LayoutProps {
+    pub direction: Option<String>,       // "horizontal" | "vertical"
+    pub justify: JustifyContent,         // Main axis alignment
+    pub align: AlignItems,               // Cross axis alignment
+    pub gap: Dimension,                  // Gap between items
+    pub padding: Option<(Dimension, Dimension, Dimension, Dimension)>, // top, right, bottom, left
+    pub wrap: bool,                      // Allow wrapping
+    pub constraints: Vec<Constraint>,    // Constraint-based positioning
+}
+
 /// Property value types
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -262,6 +368,14 @@ pub enum PropValue {
     Num(f64),
     Pair(f64, f64),
     Points(Vec<(f64, f64)>),
+    /// Dimension value (absolute, percent, auto)
+    Dim(Dimension),
+    /// Dimension pair for size
+    DimPair(DimensionPair),
+    /// Percentage pair (both values are percentages)
+    PercentPair(f64, f64),
+    /// Layout properties
+    Layout(Box<LayoutProps>),
     /// Unresolved variable reference (name, line, col)
     VarRef(String, usize, usize),
 }
@@ -299,6 +413,15 @@ impl AstShape {
 }
 
 #[cfg(feature = "python")]
+fn dim_to_py(py: Python<'_>, dim: &Dimension) -> PyObject {
+    match dim {
+        Dimension::Px(v) => v.into_py(py),
+        Dimension::Percent(p) => format!("{}%", p).into_py(py),
+        Dimension::Auto => "auto".into_py(py),
+    }
+}
+
+#[cfg(feature = "python")]
 #[pymethods]
 impl AstShape {
     #[new]
@@ -316,8 +439,11 @@ impl AstShape {
                 PropValue::None => py.None(),
                 PropValue::Str(s) => s.clone().into_py(py),
                 PropValue::Num(n) => n.into_py(py),
-                PropValue::Pair(a, b) => (*a, *b).into_py(py),
+                PropValue::Pair(a, b) | PropValue::PercentPair(a, b) => (*a, *b).into_py(py),
                 PropValue::Points(pts) => pts.clone().into_py(py),
+                PropValue::Dim(d) => dim_to_py(py, d),
+                PropValue::DimPair(dp) => (dim_to_py(py, &dp.width), dim_to_py(py, &dp.height)).into_py(py),
+                PropValue::Layout(_) => "<layout>".into_py(py),
                 PropValue::VarRef(name, _, _) => format!("${}", name).into_py(py),
             };
             dict.set_item(k, val).ok();

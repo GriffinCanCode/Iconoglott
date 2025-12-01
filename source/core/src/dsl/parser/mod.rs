@@ -1,9 +1,13 @@
 //! Parser for the iconoglott DSL
 //!
 //! Parses token stream into AST with error collection and recovery.
+//! Variable resolution is done in a separate pass via the symbols module.
+//! Layout resolution is done via the layout module.
 
 mod ast;
 mod core;
+mod layout;
+mod symbols;
 
 #[cfg(feature = "python")]
 mod python;
@@ -20,11 +24,26 @@ pub use ast::{
     FullStyle, GradientDef, GraphEdge, GraphNode, ParseError, PropValue, ShadowDef,
 };
 
+// Re-export dimension and layout types (allow unused - used externally)
+#[allow(unused_imports)]
+pub use ast::{
+    Dimension, DimensionPair, JustifyContent, AlignItems, 
+    Constraint, Edge, Axis, LayoutProps,
+};
+
 // Re-export error types for diagnostics
 pub use ast::{ErrorKind, ErrorSeverity, Span};
 
 // Re-export parser
 pub use self::core::Parser;
+
+// Re-export symbol table and resolution
+#[allow(unused_imports)] // Public API for external use
+pub use symbols::{resolve, Scope, Symbol, SymbolTable, ResolveResult};
+
+// Re-export layout solver (allow unused - used externally)
+#[allow(unused_imports)]
+pub use layout::{LayoutSolver, LayoutContext, LayoutRect, resolve_layout};
 
 // Re-export WASM bindings
 #[cfg(feature = "wasm")]

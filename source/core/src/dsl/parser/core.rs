@@ -37,6 +37,18 @@ lazy_static::lazy_static! {
         ["translate", "rotate", "scale", "origin"]
             .into_iter().collect()
     };
+    pub(crate) static ref LAYOUT_PROPS: HashSet<&'static str> = {
+        ["gap", "padding", "justify", "align", "wrap", "width", "height", "size", "anchor", "fill-parent", "center-in"]
+            .into_iter().collect()
+    };
+    pub(crate) static ref JUSTIFY_VALUES: HashSet<&'static str> = {
+        ["start", "end", "center", "space-between", "space-around", "space-evenly"]
+            .into_iter().collect()
+    };
+    pub(crate) static ref ALIGN_VALUES: HashSet<&'static str> = {
+        ["start", "end", "center", "stretch", "baseline"]
+            .into_iter().collect()
+    };
     pub(crate) static ref NODE_SHAPES: HashSet<&'static str> = {
         ["rect", "circle", "ellipse", "diamond"]
             .into_iter().collect()
@@ -120,15 +132,31 @@ impl Parser {
         }
     }
 
+    /// Resolve a token value, returning VarRef for unresolved variables.
+    /// Final resolution happens in the symbol table pass.
     pub(crate) fn resolve(&self, tok: &Token) -> TokenValue {
         if tok.ttype == TokenType::Var {
             if let TokenValue::Str(name) = &tok.value {
+                // Check local scope first (for backward compatibility in same-block vars)
                 if let Some(val) = self.variables.get(name) {
                     return val.clone();
                 }
+                // Return as unresolved - will be resolved in symbol pass
+                return TokenValue::Str(format!("$VAR:{}", name));
             }
         }
         tok.value.clone()
+    }
+
+    /// Create a VarRef PropValue for deferred resolution
+    #[allow(dead_code)] // Available for future use in property parsing
+    pub(crate) fn var_ref(&self, tok: &Token) -> PropValue {
+        if let TokenValue::Str(name) = &tok.value {
+            let name = name.strip_prefix('$').unwrap_or(name);
+            PropValue::VarRef(name.to_string(), tok.line, tok.col)
+        } else {
+            PropValue::None
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -435,49 +463,388 @@ impl Parser {
     }
 
     fn parse_layout(&mut self, kind: &str) -> AstNode {
+        use super::ast::{Dimension, JustifyContent, AlignItems, LayoutProps};
+        
         let mut shape = AstShape::new("layout");
         let direction = if kind == "stack" { "vertical" } else { "horizontal" };
         shape.props.insert("direction".into(), PropValue::Str(direction.into()));
-        shape.props.insert("gap".into(), PropValue::Num(0.0));
+        
+        // Initialize layout props with defaults
+        let mut layout = LayoutProps::default();
+        layout.direction = Some(direction.into());
 
-        while self.matches(&[TokenType::Ident]) {
-            let prop = self.current().and_then(|t| match &t.value {
-                TokenValue::Str(s) => Some(s.clone()),
-                _ => None,
-            });
-            self.advance();
+        while let Some(tok) = self.current() {
+            if self.matches(&[TokenType::Newline, TokenType::Eof]) { break; }
+            
+            match tok.ttype {
+                TokenType::Ident => {
+                    let prop = match &tok.value {
+                        TokenValue::Str(s) => s.clone(),
+                        _ => { self.advance(); continue; }
+                    };
+                    self.advance();
 
-            match prop.as_deref() {
-                Some("vertical") | Some("horizontal") => {
-                    if let Some(p) = prop {
-                        shape.props.insert("direction".into(), PropValue::Str(p));
-                    }
-                }
-                Some("gap") if self.matches(&[TokenType::Number]) => {
-                    if let Some(tok) = self.advance() {
-                        if let TokenValue::Num(n) = tok.value {
-                            shape.props.insert("gap".into(), PropValue::Num(n));
+                    match prop.as_str() {
+                        "vertical" | "horizontal" => {
+                            layout.direction = Some(prop.clone());
+                            shape.props.insert("direction".into(), PropValue::Str(prop));
                         }
+                        "gap" => {
+                            layout.gap = self.parse_dimension_value();
+                            if let Dimension::Px(n) = layout.gap {
+                                shape.props.insert("gap".into(), PropValue::Num(n));
+                            }
+                        }
+                        "justify" => {
+                            layout.justify = self.parse_justify_content();
+                            shape.props.insert("justify".into(), PropValue::Str(format!("{:?}", layout.justify).to_lowercase()));
+                        }
+                        "align" => {
+                            layout.align = self.parse_align_items();
+                            shape.props.insert("align".into(), PropValue::Str(format!("{:?}", layout.align).to_lowercase()));
+                        }
+                        "wrap" => {
+                            layout.wrap = true;
+                            shape.props.insert("wrap".into(), PropValue::Num(1.0));
+                        }
+                        "at" => {
+                            if self.matches(&[TokenType::Pair]) {
+                                if let Some(t) = self.advance() {
+                                    if let TokenValue::Pair(a, b) = t.value {
+                                        shape.props.insert("at".into(), PropValue::Pair(a, b));
+                                    }
+                                }
+                            } else if self.matches(&[TokenType::PercentPair]) {
+                                if let Some(t) = self.advance() {
+                                    if let TokenValue::PercentPair(a, b) = t.value {
+                                        shape.props.insert("at".into(), PropValue::PercentPair(a, b));
+                                    }
+                                }
+                            }
+                        }
+                        "size" => {
+                            let dim_pair = self.parse_dimension_pair();
+                            shape.props.insert("size".into(), PropValue::DimPair(dim_pair));
+                        }
+                        "width" => {
+                            let dim = self.parse_dimension_value();
+                            shape.props.insert("width".into(), PropValue::Dim(dim));
+                        }
+                        "height" => {
+                            let dim = self.parse_dimension_value();
+                            shape.props.insert("height".into(), PropValue::Dim(dim));
+                        }
+                        "padding" => {
+                            layout.padding = Some(self.parse_padding());
+                        }
+                        "center" => {
+                            // Shorthand: center = justify center + align center
+                            layout.justify = JustifyContent::Center;
+                            layout.align = AlignItems::Center;
+                            shape.props.insert("justify".into(), PropValue::Str("center".into()));
+                            shape.props.insert("align".into(), PropValue::Str("center".into()));
+                        }
+                        _ => {}
                     }
                 }
-                Some("at") if self.matches(&[TokenType::Pair]) => {
-                    if let Some(tok) = self.advance() {
-                        if let TokenValue::Pair(a, b) = tok.value {
-                            shape.props.insert("at".into(), PropValue::Pair(a, b));
+                TokenType::Number => {
+                    // Bare number is gap
+                    if let TokenValue::Num(n) = tok.value {
+                        layout.gap = Dimension::Px(n);
+                        shape.props.insert("gap".into(), PropValue::Num(n));
+                    }
+                    self.advance();
+                }
+                TokenType::Percent => {
+                    // Bare percentage for gap
+                    if let TokenValue::Num(n) = tok.value {
+                        layout.gap = Dimension::Percent(n);
+                        shape.props.insert("gap".into(), PropValue::Dim(Dimension::Percent(n)));
+                    }
+                    self.advance();
+                }
+                _ => { self.advance(); }
+            }
+        }
+
+        // Store full layout props
+        shape.props.insert("_layout".into(), PropValue::Layout(Box::new(layout)));
+
+        self.skip_newlines();
+        if self.matches(&[TokenType::Indent]) {
+            self.advance();
+            self.parse_layout_block(&mut shape);
+        }
+
+        AstNode::Shape(shape)
+    }
+    
+    /// Parse a dimension value (number, percentage, or 'auto')
+    fn parse_dimension_value(&mut self) -> Dimension {
+        use super::ast::Dimension;
+        
+        if let Some(tok) = self.current() {
+            match tok.ttype {
+                TokenType::Number => {
+                    if let TokenValue::Num(n) = tok.value {
+                        self.advance();
+                        return Dimension::Px(n);
+                    }
+                }
+                TokenType::Percent => {
+                    if let TokenValue::Num(n) = tok.value {
+                        self.advance();
+                        return Dimension::Percent(n);
+                    }
+                }
+                TokenType::Ident => {
+                    if let TokenValue::Str(s) = &tok.value {
+                        if s == "auto" {
+                            self.advance();
+                            return Dimension::Auto;
                         }
                     }
                 }
                 _ => {}
             }
         }
-
-        self.skip_newlines();
-        if self.matches(&[TokenType::Indent]) {
-            self.advance();
-            self.parse_block(&mut shape);
+        Dimension::Auto
+    }
+    
+    /// Parse a dimension pair for width/height
+    fn parse_dimension_pair(&mut self) -> DimensionPair {
+        use super::ast::{Dimension, DimensionPair};
+        
+        if let Some(tok) = self.current() {
+            match tok.ttype {
+                TokenType::Pair => {
+                    if let TokenValue::Pair(w, h) = tok.value {
+                        self.advance();
+                        return DimensionPair { width: Dimension::Px(w), height: Dimension::Px(h) };
+                    }
+                }
+                TokenType::PercentPair => {
+                    if let TokenValue::PercentPair(w, h) = tok.value {
+                        self.advance();
+                        return DimensionPair { width: Dimension::Percent(w), height: Dimension::Percent(h) };
+                    }
+                }
+                TokenType::Ident if matches!(&tok.value, TokenValue::Str(s) if s == "auto") => {
+                    self.advance();
+                    return DimensionPair { width: Dimension::Auto, height: Dimension::Auto };
+                }
+                _ => {}
+            }
         }
+        DimensionPair::default()
+    }
+    
+    /// Parse justify-content value
+    fn parse_justify_content(&mut self) -> JustifyContent {
+        use super::ast::JustifyContent;
+        
+        if self.matches(&[TokenType::Ident]) {
+            if let Some(tok) = self.advance() {
+                if let TokenValue::Str(s) = &tok.value {
+                    return match s.as_str() {
+                        "start" => JustifyContent::Start,
+                        "end" => JustifyContent::End,
+                        "center" => JustifyContent::Center,
+                        "space-between" => JustifyContent::SpaceBetween,
+                        "space-around" => JustifyContent::SpaceAround,
+                        "space-evenly" => JustifyContent::SpaceEvenly,
+                        _ => JustifyContent::Start,
+                    };
+                }
+            }
+        }
+        JustifyContent::Start
+    }
+    
+    /// Parse align-items value
+    fn parse_align_items(&mut self) -> AlignItems {
+        use super::ast::AlignItems;
+        
+        if self.matches(&[TokenType::Ident]) {
+            if let Some(tok) = self.advance() {
+                if let TokenValue::Str(s) = &tok.value {
+                    return match s.as_str() {
+                        "start" => AlignItems::Start,
+                        "end" => AlignItems::End,
+                        "center" => AlignItems::Center,
+                        "stretch" => AlignItems::Stretch,
+                        "baseline" => AlignItems::Baseline,
+                        _ => AlignItems::Start,
+                    };
+                }
+            }
+        }
+        AlignItems::Start
+    }
+    
+    /// Parse padding values (1, 2, or 4 values)
+    fn parse_padding(&mut self) -> (Dimension, Dimension, Dimension, Dimension) {
+        use super::ast::Dimension;
+        
+        let mut values = Vec::new();
+        
+        // Collect up to 4 dimension values
+        while values.len() < 4 && self.matches(&[TokenType::Number, TokenType::Percent]) {
+            values.push(self.parse_dimension_value());
+        }
+        
+        match values.len() {
+            1 => (values[0].clone(), values[0].clone(), values[0].clone(), values[0].clone()),
+            2 => (values[0].clone(), values[1].clone(), values[0].clone(), values[1].clone()),
+            4 => (values[0].clone(), values[1].clone(), values[2].clone(), values[3].clone()),
+            _ => (Dimension::Px(0.0), Dimension::Px(0.0), Dimension::Px(0.0), Dimension::Px(0.0)),
+        }
+    }
+    
+    /// Parse layout block (like parse_block but with layout-specific handling)
+    fn parse_layout_block(&mut self, shape: &mut AstShape) {
+        #![allow(unused_imports)]
+        use super::ast::Dimension;
+        
+        while let Some(tok) = self.current() {
+            if tok.ttype == TokenType::Dedent {
+                self.advance();
+                break;
+            }
+            if tok.ttype == TokenType::Eof {
+                self.error_at_current("Unexpected end of file in layout block", ErrorKind::UnterminatedBlock, None);
+                break;
+            }
 
-        AstNode::Shape(shape)
+            self.skip_newlines();
+            if self.matches(&[TokenType::Dedent]) {
+                self.advance();
+                break;
+            }
+
+            if let Some(tok) = self.current() {
+                if tok.ttype == TokenType::Ident {
+                    let prop = match &tok.value {
+                        TokenValue::Str(s) => s.clone(),
+                        _ => { self.advance(); continue; }
+                    };
+
+                    // Check for nested shapes
+                    if SHAPES.contains(prop.as_str()) || prop == "stack" || prop == "row" {
+                        match self.parse_statement() {
+                            Some(AstNode::Shape(mut child)) => {
+                                // Check for child layout constraints
+                                self.apply_child_layout_props(&mut child);
+                                shape.children.push(child);
+                            }
+                            _ => {}
+                        }
+                    } else if LAYOUT_PROPS.contains(prop.as_str()) {
+                        self.parse_layout_prop(shape);
+                    } else if STYLE_PROPS.contains(prop.as_str()) {
+                        self.parse_style_prop(shape);
+                    } else if TEXT_PROPS.contains(prop.as_str()) {
+                        self.parse_text_prop(&mut shape.style);
+                    } else if TRANSFORM_PROPS.contains(prop.as_str()) {
+                        self.parse_transform_prop(&mut shape.transform);
+                    } else {
+                        self.error_at_current(
+                            &format!("Unknown property '{}' in layout block", prop),
+                            ErrorKind::InvalidProperty,
+                            Some("Valid layout properties: gap, justify, align, padding, wrap, width, height")
+                        );
+                        self.advance();
+                        self.sync_to_line_end();
+                    }
+                } else {
+                    self.advance();
+                }
+            }
+        }
+    }
+    
+    /// Parse a layout-specific property
+    fn parse_layout_prop(&mut self, shape: &mut AstShape) {
+        use super::ast::Dimension;
+        
+        let prop = match self.advance().and_then(|t| match &t.value {
+            TokenValue::Str(s) => Some(s.clone()),
+            _ => None,
+        }) {
+            Some(p) => p,
+            None => return,
+        };
+
+        match prop.as_str() {
+            "gap" => {
+                let dim = self.parse_dimension_value();
+                if let Dimension::Px(n) = dim {
+                    shape.props.insert("gap".into(), PropValue::Num(n));
+                } else {
+                    shape.props.insert("gap".into(), PropValue::Dim(dim));
+                }
+            }
+            "justify" => {
+                let val = self.parse_justify_content();
+                shape.props.insert("justify".into(), PropValue::Str(format!("{:?}", val).to_lowercase()));
+            }
+            "align" => {
+                let val = self.parse_align_items();
+                shape.props.insert("align".into(), PropValue::Str(format!("{:?}", val).to_lowercase()));
+            }
+            "width" => {
+                let dim = self.parse_dimension_value();
+                shape.props.insert("width".into(), PropValue::Dim(dim));
+            }
+            "height" => {
+                let dim = self.parse_dimension_value();
+                shape.props.insert("height".into(), PropValue::Dim(dim));
+            }
+            "size" => {
+                let dim_pair = self.parse_dimension_pair();
+                shape.props.insert("size".into(), PropValue::DimPair(dim_pair));
+            }
+            "padding" => {
+                let padding = self.parse_padding();
+                // Store as prop for now (serialization-friendly)
+                if let (Dimension::Px(t), Dimension::Px(r), Dimension::Px(b), Dimension::Px(l)) = &padding {
+                    shape.props.insert("padding".into(), PropValue::Points(vec![(*t, *r), (*b, *l)]));
+                }
+            }
+            "wrap" => {
+                shape.props.insert("wrap".into(), PropValue::Num(1.0));
+            }
+            "fill-parent" => {
+                // Shorthand for width 100%, height 100%
+                shape.props.insert("width".into(), PropValue::Dim(Dimension::Percent(100.0)));
+                shape.props.insert("height".into(), PropValue::Dim(Dimension::Percent(100.0)));
+            }
+            "center-in" => {
+                // Constraint: center in parent
+                shape.props.insert("_center_x".into(), PropValue::Num(1.0));
+                shape.props.insert("_center_y".into(), PropValue::Num(1.0));
+            }
+            "anchor" => {
+                // Parse anchor constraint: anchor top 10 or anchor left 20%
+                if self.matches(&[TokenType::Ident]) {
+                    let edge = self.advance().and_then(|t| match &t.value {
+                        TokenValue::Str(s) => Some(s.clone()),
+                        _ => None,
+                    });
+                    if let Some(edge) = edge {
+                        let offset = self.parse_dimension_value();
+                        shape.props.insert(format!("_anchor_{}", edge), PropValue::Dim(offset));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    
+    /// Apply layout-specific properties to child shapes
+    fn apply_child_layout_props(&mut self, _child: &mut AstShape) {
+        // Child layout properties like flex-grow, align-self can be handled here
+        // For now, this is a placeholder for future extension
     }
 
     fn parse_graph(&mut self) -> AstNode {

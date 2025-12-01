@@ -18,10 +18,12 @@ use wasm_bindgen::prelude::*;
 pub enum TokenType {
     Ident,
     Number,
+    Percent,     // 50%, 100%
     String,
     Color,
     Var,
     Pair,
+    PercentPair, // 50%,50% or 50%x50%
     Size,
     Colon,
     Equals,
@@ -115,6 +117,8 @@ pub enum TokenValue {
     Str(String),
     Num(f64),
     Pair(f64, f64),
+    /// Percentage pair (both values are percentages 0-100)
+    PercentPair(f64, f64),
 }
 
 impl Default for TokenValue {
@@ -175,7 +179,7 @@ impl Token {
             TokenValue::None => py.None(),
             TokenValue::Str(s) => s.clone().into_py(py),
             TokenValue::Num(n) => n.into_py(py),
-            TokenValue::Pair(a, b) => (*a, *b).into_py(py),
+            TokenValue::Pair(a, b) | TokenValue::PercentPair(a, b) => (*a, *b).into_py(py),
         }
     }
 
@@ -212,7 +216,11 @@ impl Lexer {
             Pattern { regex: Regex::new(r"^//[^\n]*").unwrap(), ttype: None }, // Comments
             Pattern { regex: Regex::new(r"^\$[a-zA-Z_][a-zA-Z0-9_]*").unwrap(), ttype: Some(TokenType::Var) },
             Pattern { regex: Regex::new(r"^#[0-9a-fA-F]{3,8}\b").unwrap(), ttype: Some(TokenType::Color) },
+            // Percent pairs must come before regular pairs (50%,50% or 50%x50%)
+            Pattern { regex: Regex::new(r"^-?\d+\.?\d*%[,x]-?\d+\.?\d*%").unwrap(), ttype: Some(TokenType::PercentPair) },
             Pattern { regex: Regex::new(r"^-?\d+\.?\d*[,x]-?\d+\.?\d*").unwrap(), ttype: Some(TokenType::Pair) },
+            // Single percentage (50%)
+            Pattern { regex: Regex::new(r"^-?\d+\.?\d*%").unwrap(), ttype: Some(TokenType::Percent) },
             Pattern { regex: Regex::new(r#"^"[^"]*""#).unwrap(), ttype: Some(TokenType::String) },
             Pattern { regex: Regex::new(r"^'[^']*'").unwrap(), ttype: Some(TokenType::String) },
             Pattern { regex: Regex::new(r"^-?\d+\.?\d*").unwrap(), ttype: Some(TokenType::Number) },
@@ -329,6 +337,11 @@ impl Lexer {
                     TokenValue::Num(raw.parse::<i64>().unwrap_or(0) as f64)
                 }
             }
+            TokenType::Percent => {
+                // Strip % and parse as number (stored as 0-100)
+                let num = raw.trim_end_matches('%');
+                TokenValue::Num(num.parse().unwrap_or(0.0))
+            }
             TokenType::String => {
                 TokenValue::Str(raw[1..raw.len() - 1].to_string()) // Strip quotes
             }
@@ -341,6 +354,18 @@ impl Lexer {
                     TokenValue::Pair(a, b)
                 } else {
                     TokenValue::Pair(0.0, 0.0)
+                }
+            }
+            TokenType::PercentPair => {
+                // Parse percentage pairs (50%,50% or 50%x50%)
+                let sep = if raw.contains('x') { 'x' } else { ',' };
+                let parts: Vec<&str> = raw.split(sep).collect();
+                if parts.len() == 2 {
+                    let a = parts[0].trim_end_matches('%').parse().unwrap_or(0.0);
+                    let b = parts[1].trim_end_matches('%').parse().unwrap_or(0.0);
+                    TokenValue::PercentPair(a, b)
+                } else {
+                    TokenValue::PercentPair(0.0, 0.0)
                 }
             }
             TokenType::Size => TokenValue::Str(raw.to_lowercase()),
