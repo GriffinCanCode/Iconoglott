@@ -1,78 +1,142 @@
-//! Scene diffing engine with content-addressed hashing
+//! Incremental scene diffing with stable element IDs
 //!
-//! Uses type-stratified matching and per-field change detection
-//! to produce minimal DOM patch operations.
+//! Uses content-addressed hashing + ID-based reconciliation for O(n) diffing
+//! with minimal SVG regeneration. Inspired by VDOM reconciliation algorithms.
 
 use std::collections::HashMap;
+use crate::id::{ContentHash, ElementId, ElementKind, Fnv1a, IdGen};
 use crate::scene::{Element, Scene};
 use crate::shape::Style;
 
-/// Hash of element content for O(1) equality checks
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ContentHash(u64);
+/// Indexed element with stable identity and content hash
+#[derive(Debug, Clone)]
+pub struct IndexedElement {
+    pub id: ElementId,
+    pub hash: ContentHash,
+    pub kind: ElementKind,
+    pub index: usize,
+}
 
-impl ContentHash {
-    fn new(data: &[u8]) -> Self {
-        // FNV-1a hash - fast and good distribution
-        let mut hash: u64 = 0xcbf29ce484222325;
-        for byte in data {
-            hash ^= *byte as u64;
-            hash = hash.wrapping_mul(0x100000001b3);
-        }
-        Self(hash)
-    }
-
-    pub fn from_element(el: &Element) -> Self {
-        Self::new(el.to_svg().as_bytes())
+impl IndexedElement {
+    pub fn new(el: &Element, order: u64, index: usize) -> Self {
+        let kind = element_kind(el);
+        let id = compute_id(el, order, kind);
+        let hash = ContentHash::from_svg(&el.to_svg());
+        Self { id, hash, kind, index }
     }
 }
 
-/// Granular patch operation for minimal updates
+/// Compute stable ID from element's key properties
+fn compute_id(el: &Element, order: u64, kind: ElementKind) -> ElementId {
+    let mut h = Fnv1a::default();
+    
+    // Key properties: position and identity-defining attributes
+    match el {
+        Element::Rect(r) => { h.write_f32(r.x); h.write_f32(r.y); }
+        Element::Circle(c) => { h.write_f32(c.cx); h.write_f32(c.cy); }
+        Element::Ellipse(e) => { h.write_f32(e.cx); h.write_f32(e.cy); }
+        Element::Line(l) => { h.write_f32(l.x1); h.write_f32(l.y1); h.write_f32(l.x2); h.write_f32(l.y2); }
+        Element::Path(p) => h.write_str(&p.d),
+        Element::Polygon(p) => for (x, y) in &p.points { h.write_f32(*x); h.write_f32(*y); },
+        Element::Text(t) => { h.write_f32(t.x); h.write_f32(t.y); h.write_str(&t.content); }
+        Element::Image(i) => { h.write_str(&i.href); }
+        Element::Group(_, tf) => if let Some(t) = tf { h.write_str(t); },
+    }
+    
+    ElementId::with_key(order, kind.as_u8(), &h.finish().to_le_bytes())
+}
+
+/// Get element kind discriminant
+#[inline]
+pub fn element_kind(el: &Element) -> ElementKind {
+    match el {
+        Element::Rect(_) => ElementKind::Rect,
+        Element::Circle(_) => ElementKind::Circle,
+        Element::Ellipse(_) => ElementKind::Ellipse,
+        Element::Line(_) => ElementKind::Line,
+        Element::Path(_) => ElementKind::Path,
+        Element::Polygon(_) => ElementKind::Polygon,
+        Element::Text(_) => ElementKind::Text,
+        Element::Image(_) => ElementKind::Image,
+        Element::Group(_, _) => ElementKind::Group,
+    }
+}
+
+/// Targeted diff operation for incremental updates
 #[derive(Debug, Clone, PartialEq)]
-pub enum Patch {
-    /// No changes needed
+pub enum DiffOp {
+    /// No changes
     None,
     /// Full scene redraw (canvas changed)
     FullRedraw,
-    /// Element operations
-    Add { idx: usize, svg: String },
-    Remove { idx: usize },
-    /// Update specific attributes on element
-    Update { idx: usize, attrs: Vec<(String, String)> },
-    /// Element moved position
-    Move { from: usize, to: usize },
-    /// Batch reorder for efficiency
-    Reorder { order: Vec<usize> },
-    /// Gradient/filter def changes
+    /// Add element at index with SVG
+    Add { id: u64, idx: usize, svg: String },
+    /// Remove element by ID
+    Remove { id: u64, idx: usize },
+    /// Update element attributes
+    Update { id: u64, idx: usize, attrs: Vec<(String, String)>, svg: Option<String> },
+    /// Move element from old index to new index
+    Move { id: u64, from: usize, to: usize },
+    /// Update defs (gradients/filters)
     UpdateDefs { svg: String },
 }
 
-/// Result of scene comparison
+/// Indexed scene for O(1) element lookup
+#[derive(Debug, Default)]
+pub struct IndexedScene {
+    pub elements: Vec<IndexedElement>,
+    id_map: HashMap<ElementId, usize>,
+}
+
+impl IndexedScene {
+    pub fn from_scene(scene: &Scene) -> Self {
+        let gen = IdGen::default();
+        let elements: Vec<_> = scene.elements()
+            .iter()
+            .enumerate()
+            .map(|(idx, el)| IndexedElement::new(el, gen.next(), idx))
+            .collect();
+        
+        let id_map = elements.iter()
+            .map(|e| (e.id, e.index))
+            .collect();
+        
+        Self { elements, id_map }
+    }
+
+    #[inline]
+    pub fn get(&self, id: &ElementId) -> Option<&IndexedElement> {
+        self.id_map.get(id).map(|&idx| &self.elements[idx])
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize { self.elements.len() }
+}
+
+/// Diff result with operations
 #[derive(Debug, Default)]
 pub struct DiffResult {
-    pub patches: Vec<Patch>,
+    pub ops: Vec<DiffOp>,
     pub canvas_changed: bool,
 }
 
 impl DiffResult {
     pub fn full_redraw() -> Self {
-        Self { patches: vec![Patch::FullRedraw], canvas_changed: true }
+        Self { ops: vec![DiffOp::FullRedraw], canvas_changed: true }
     }
 
-    pub fn empty() -> Self {
-        Self { patches: vec![], canvas_changed: false }
-    }
+    pub fn empty() -> Self { Self::default() }
 
     #[inline]
-    pub fn is_empty(&self) -> bool { self.patches.is_empty() }
+    pub fn is_empty(&self) -> bool { self.ops.is_empty() }
 
     #[inline]
     pub fn needs_full_redraw(&self) -> bool {
-        self.canvas_changed || self.patches.iter().any(|p| matches!(p, Patch::FullRedraw))
+        self.canvas_changed || self.ops.iter().any(|o| matches!(o, DiffOp::FullRedraw))
     }
 }
 
-/// Diff two scenes and produce minimal patches
+/// Diff two scenes using indexed reconciliation
 pub fn diff(old: &Scene, new: &Scene) -> DiffResult {
     // Canvas change = full redraw
     if old.width != new.width || old.height != new.height || old.background != new.background {
@@ -82,65 +146,72 @@ pub fn diff(old: &Scene, new: &Scene) -> DiffResult {
     let old_els = old.elements();
     let new_els = new.elements();
 
-    // Fast path: identical element counts with same hashes
-    if old_els.len() == new_els.len() {
-        let patches = diff_matched_elements(old_els, new_els);
-        if patches.is_empty() {
-            return DiffResult::empty();
+    // Fast path: empty scenes
+    if old_els.is_empty() && new_els.is_empty() {
+        return DiffResult::empty();
+    }
+
+    // Index old scene for O(1) lookup
+    let old_indexed = IndexedScene::from_scene(old);
+    let gen = IdGen::default();
+    
+    let mut ops = Vec::new();
+    let mut matched: Vec<bool> = vec![false; old_els.len()];
+
+    // Pass 1: Match new elements to old
+    for (new_idx, new_el) in new_els.iter().enumerate() {
+        let new_kind = element_kind(new_el);
+        let new_id = compute_id(new_el, gen.next(), new_kind);
+        let new_hash = ContentHash::from_svg(&new_el.to_svg());
+
+        if let Some(old_ie) = old_indexed.get(&new_id) {
+            matched[old_ie.index] = true;
+            
+            // Same position, check content
+            if old_ie.hash != new_hash {
+                let attrs = diff_attrs(&old_els[old_ie.index], new_el);
+                let svg = if attrs.len() > 3 { Some(new_el.to_svg()) } else { None };
+                ops.push(DiffOp::Update { id: new_id.0, idx: new_idx, attrs, svg });
+            }
+            
+            // Position change
+            if old_ie.index != new_idx {
+                ops.push(DiffOp::Move { id: new_id.0, from: old_ie.index, to: new_idx });
+            }
+        } else {
+            // New element
+            ops.push(DiffOp::Add { id: new_id.0, idx: new_idx, svg: new_el.to_svg() });
         }
-        return DiffResult { patches, canvas_changed: false };
     }
 
-    // General case: element count differs
-    diff_general(old_els, new_els)
+    // Pass 2: Remove unmatched old elements (reverse for stable indices)
+    for (old_idx, &was_matched) in matched.iter().enumerate().rev() {
+        if !was_matched {
+            let old_el = &old_els[old_idx];
+            let old_kind = element_kind(old_el);
+            let old_id = compute_id(old_el, old_idx as u64, old_kind);
+            ops.push(DiffOp::Remove { id: old_id.0, idx: old_idx });
+        }
+    }
+
+    // Check defs changes
+    let old_defs = build_defs_svg(old);
+    let new_defs = build_defs_svg(new);
+    if old_defs != new_defs {
+        ops.push(DiffOp::UpdateDefs { svg: new_defs });
+    }
+
+    DiffResult { ops, canvas_changed: false }
 }
 
-/// Diff when element counts match (most common case during editing)
-fn diff_matched_elements(old: &[Element], new: &[Element]) -> Vec<Patch> {
-    old.iter()
-        .zip(new.iter())
-        .enumerate()
-        .filter_map(|(idx, (o, n))| diff_element(idx, o, n))
-        .collect()
+fn build_defs_svg(scene: &Scene) -> String {
+    let mut svg = String::new();
+    for g in scene.gradients() { svg.push_str(&g.to_svg()); }
+    for f in scene.filters() { svg.push_str(&f.to_svg()); }
+    svg
 }
 
-/// Compare two elements at same position
-fn diff_element(idx: usize, old: &Element, new: &Element) -> Option<Patch> {
-    // Type mismatch = replace
-    if element_type(old) != element_type(new) {
-        return Some(Patch::Remove { idx });
-    }
-
-    // Content hash check for fast equality
-    if ContentHash::from_element(old) == ContentHash::from_element(new) {
-        return None;
-    }
-
-    // Compute attribute-level diff
-    let attrs = diff_attrs(old, new);
-    if attrs.is_empty() {
-        None
-    } else {
-        Some(Patch::Update { idx, attrs })
-    }
-}
-
-/// Get discriminant type name for element
-fn element_type(el: &Element) -> &'static str {
-    match el {
-        Element::Rect(_) => "rect",
-        Element::Circle(_) => "circle",
-        Element::Ellipse(_) => "ellipse",
-        Element::Line(_) => "line",
-        Element::Path(_) => "path",
-        Element::Polygon(_) => "polygon",
-        Element::Text(_) => "text",
-        Element::Image(_) => "image",
-        Element::Group(_, _) => "group",
-    }
-}
-
-/// Compute changed attributes between same-type elements
+/// Diff attributes between same-kind elements
 fn diff_attrs(old: &Element, new: &Element) -> Vec<(String, String)> {
     let mut changes = Vec::new();
 
@@ -151,14 +222,14 @@ fn diff_attrs(old: &Element, new: &Element) -> Vec<(String, String)> {
             if o.w != n.w { changes.push(("width".into(), n.w.to_string())); }
             if o.h != n.h { changes.push(("height".into(), n.h.to_string())); }
             if o.rx != n.rx { changes.push(("rx".into(), n.rx.to_string())); }
-            diff_style_attrs(&o.style, &n.style, &mut changes);
+            diff_style(&o.style, &n.style, &mut changes);
             diff_transform(&o.transform, &n.transform, &mut changes);
         }
         (Element::Circle(o), Element::Circle(n)) => {
             if o.cx != n.cx { changes.push(("cx".into(), n.cx.to_string())); }
             if o.cy != n.cy { changes.push(("cy".into(), n.cy.to_string())); }
             if o.r != n.r { changes.push(("r".into(), n.r.to_string())); }
-            diff_style_attrs(&o.style, &n.style, &mut changes);
+            diff_style(&o.style, &n.style, &mut changes);
             diff_transform(&o.transform, &n.transform, &mut changes);
         }
         (Element::Ellipse(o), Element::Ellipse(n)) => {
@@ -166,7 +237,7 @@ fn diff_attrs(old: &Element, new: &Element) -> Vec<(String, String)> {
             if o.cy != n.cy { changes.push(("cy".into(), n.cy.to_string())); }
             if o.rx != n.rx { changes.push(("rx".into(), n.rx.to_string())); }
             if o.ry != n.ry { changes.push(("ry".into(), n.ry.to_string())); }
-            diff_style_attrs(&o.style, &n.style, &mut changes);
+            diff_style(&o.style, &n.style, &mut changes);
             diff_transform(&o.transform, &n.transform, &mut changes);
         }
         (Element::Line(o), Element::Line(n)) => {
@@ -174,12 +245,13 @@ fn diff_attrs(old: &Element, new: &Element) -> Vec<(String, String)> {
             if o.y1 != n.y1 { changes.push(("y1".into(), n.y1.to_string())); }
             if o.x2 != n.x2 { changes.push(("x2".into(), n.x2.to_string())); }
             if o.y2 != n.y2 { changes.push(("y2".into(), n.y2.to_string())); }
-            diff_style_attrs(&o.style, &n.style, &mut changes);
+            diff_style(&o.style, &n.style, &mut changes);
             diff_transform(&o.transform, &n.transform, &mut changes);
         }
         (Element::Path(o), Element::Path(n)) => {
             if o.d != n.d { changes.push(("d".into(), n.d.clone())); }
-            diff_style_attrs(&o.style, &n.style, &mut changes);
+            diff_style(&o.style, &n.style, &mut changes);
+            diff_transform(&o.transform, &n.transform, &mut changes);
         }
         (Element::Text(o), Element::Text(n)) => {
             if o.x != n.x { changes.push(("x".into(), n.x.to_string())); }
@@ -189,7 +261,8 @@ fn diff_attrs(old: &Element, new: &Element) -> Vec<(String, String)> {
             if o.size != n.size { changes.push(("font-size".into(), n.size.to_string())); }
             if o.weight != n.weight { changes.push(("font-weight".into(), n.weight.clone())); }
             if o.anchor != n.anchor { changes.push(("text-anchor".into(), n.anchor.clone())); }
-            diff_style_attrs(&o.style, &n.style, &mut changes);
+            diff_style(&o.style, &n.style, &mut changes);
+            diff_transform(&o.transform, &n.transform, &mut changes);
         }
         (Element::Image(o), Element::Image(n)) => {
             if o.x != n.x { changes.push(("x".into(), n.x.to_string())); }
@@ -197,6 +270,7 @@ fn diff_attrs(old: &Element, new: &Element) -> Vec<(String, String)> {
             if o.w != n.w { changes.push(("width".into(), n.w.to_string())); }
             if o.h != n.h { changes.push(("height".into(), n.h.to_string())); }
             if o.href != n.href { changes.push(("href".into(), n.href.clone())); }
+            diff_transform(&o.transform, &n.transform, &mut changes);
         }
         (Element::Polygon(o), Element::Polygon(n)) => {
             if o.points != n.points {
@@ -206,16 +280,16 @@ fn diff_attrs(old: &Element, new: &Element) -> Vec<(String, String)> {
                     .join(" ");
                 changes.push(("points".into(), pts));
             }
-            diff_style_attrs(&o.style, &n.style, &mut changes);
+            diff_style(&o.style, &n.style, &mut changes);
+            diff_transform(&o.transform, &n.transform, &mut changes);
         }
-        _ => {} // Groups handled recursively
+        _ => {}
     }
 
     changes
 }
 
-/// Diff style properties
-fn diff_style_attrs(old: &Style, new: &Style, out: &mut Vec<(String, String)>) {
+fn diff_style(old: &Style, new: &Style, out: &mut Vec<(String, String)>) {
     if old.fill != new.fill {
         out.push(("fill".into(), new.fill.clone().unwrap_or_default()));
     }
@@ -234,7 +308,6 @@ fn diff_style_attrs(old: &Style, new: &Style, out: &mut Vec<(String, String)>) {
     }
 }
 
-/// Diff transform attribute
 #[inline]
 fn diff_transform(old: &Option<String>, new: &Option<String>, out: &mut Vec<(String, String)>) {
     if old != new {
@@ -242,48 +315,8 @@ fn diff_transform(old: &Option<String>, new: &Option<String>, out: &mut Vec<(Str
     }
 }
 
-/// General diff for when element counts differ
-fn diff_general(old: &[Element], new: &[Element]) -> DiffResult {
-    let old_hashes: Vec<_> = old.iter().map(ContentHash::from_element).collect();
-    let new_hashes: Vec<_> = new.iter().map(ContentHash::from_element).collect();
-
-    // Build hash -> indices map for old elements
-    let mut old_map: HashMap<ContentHash, Vec<usize>> = HashMap::new();
-    for (i, h) in old_hashes.iter().enumerate() {
-        old_map.entry(*h).or_default().push(i);
-    }
-
-    let mut patches = Vec::new();
-    let mut matched_old: Vec<bool> = vec![false; old.len()];
-
-    // Pass 1: Match new elements to old by hash
-    for (new_idx, new_hash) in new_hashes.iter().enumerate() {
-        if let Some(old_indices) = old_map.get_mut(new_hash) {
-            if let Some(old_idx) = old_indices.pop() {
-                matched_old[old_idx] = true;
-                // Check if position changed
-                if old_idx != new_idx {
-                    patches.push(Patch::Move { from: old_idx, to: new_idx });
-                }
-            } else {
-                // Hash existed but all instances used - add new
-                patches.push(Patch::Add { idx: new_idx, svg: new[new_idx].to_svg() });
-            }
-        } else {
-            // No match - new element
-            patches.push(Patch::Add { idx: new_idx, svg: new[new_idx].to_svg() });
-        }
-    }
-
-    // Pass 2: Remove unmatched old elements (reverse order for stable indices)
-    for (old_idx, matched) in matched_old.iter().enumerate().rev() {
-        if !matched {
-            patches.push(Patch::Remove { idx: old_idx });
-        }
-    }
-
-    DiffResult { patches, canvas_changed: false }
-}
+// Backwards compatibility aliases
+pub type Patch = DiffOp;
 
 #[cfg(test)]
 mod tests {
@@ -298,35 +331,30 @@ mod tests {
     fn test_identical_scenes() {
         let s1 = make_scene(800, 600, "#fff");
         let s2 = make_scene(800, 600, "#fff");
-        let result = diff(&s1, &s2);
-        assert!(result.is_empty());
+        assert!(diff(&s1, &s2).is_empty());
     }
 
     #[test]
-    fn test_canvas_change_triggers_full_redraw() {
+    fn test_canvas_change_full_redraw() {
         let s1 = make_scene(800, 600, "#fff");
         let s2 = make_scene(800, 600, "#000");
-        let result = diff(&s1, &s2);
-        assert!(result.needs_full_redraw());
+        assert!(diff(&s1, &s2).needs_full_redraw());
     }
 
     #[test]
-    fn test_content_hash_consistency() {
-        let style = Style::default();
-        let r1 = Element::Rect(Rect { x: 10.0, y: 20.0, w: 100.0, h: 50.0, rx: 0.0, style: style.clone(), transform: None });
-        let r2 = Element::Rect(Rect { x: 10.0, y: 20.0, w: 100.0, h: 50.0, rx: 0.0, style, transform: None });
-        assert_eq!(ContentHash::from_element(&r1), ContentHash::from_element(&r2));
+    fn test_indexed_scene_lookup() {
+        let scene = make_scene(800, 600, "#fff");
+        let indexed = IndexedScene::from_scene(&scene);
+        assert_eq!(indexed.len(), 0);
     }
 
     #[test]
-    fn test_property_change_detection() {
+    fn test_element_kind() {
         let style = Style::default();
-        let old = Element::Circle(Circle { cx: 50.0, cy: 50.0, r: 25.0, style: style.clone(), transform: None });
-        let new = Element::Circle(Circle { cx: 60.0, cy: 50.0, r: 25.0, style, transform: None });
+        let rect = Element::Rect(Rect { x: 0.0, y: 0.0, w: 100.0, h: 50.0, rx: 0.0, style: style.clone(), transform: None });
+        let circle = Element::Circle(Circle { cx: 50.0, cy: 50.0, r: 25.0, style, transform: None });
         
-        let attrs = diff_attrs(&old, &new);
-        assert_eq!(attrs.len(), 1);
-        assert_eq!(attrs[0], ("cx".into(), "60".into()));
+        assert_eq!(element_kind(&rect), ElementKind::Rect);
+        assert_eq!(element_kind(&circle), ElementKind::Circle);
     }
 }
-

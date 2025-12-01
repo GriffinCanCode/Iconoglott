@@ -53,6 +53,7 @@ export interface Canvas {
 }
 
 export interface Shape {
+  id?: string;
   kind: string;
   props: Record<string, unknown>;
   style: Style;
