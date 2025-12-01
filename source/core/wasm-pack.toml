@@ -1,0 +1,6 @@
+# wasm-pack configuration for iconoglott-core
+# Build with: wasm-pack build --target web --features wasm -- --no-default-features
+
+[package]
+name = "iconoglott-core"
+

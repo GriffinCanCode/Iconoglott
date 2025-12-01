@@ -9,13 +9,22 @@
 //! - Python: `cargo build --features python` (PyO3 bindings)
 //! - WASM: `wasm-pack build --features wasm` (wasm-bindgen)
 
-mod cache;
-mod diff;
+// Core modules (always compiled)
 mod id;
+
+// Python-specific modules (only with python feature)
+#[cfg(feature = "python")]
+mod cache;
+#[cfg(feature = "python")]
+mod diff;
+#[cfg(feature = "python")]
 mod render;
+#[cfg(feature = "python")]
 mod scene;
+#[cfg(feature = "python")]
 mod shape;
 
+// WASM module (only with wasm feature)
 #[cfg(feature = "wasm")]
 mod wasm;
 
@@ -26,34 +35,31 @@ mod wasm;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
-#[cfg(feature = "python")]
-use render::{compute_patches, index_scene, needs_redraw, RenderPatch};
-
 /// Python module entry point
 #[cfg(feature = "python")]
 #[pymodule]
 fn iconoglott_core(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     // Scene & definitions
-    m.add_class::<Scene>()?;
-    m.add_class::<Gradient>()?;
-    m.add_class::<Filter>()?;
+    m.add_class::<scene::Scene>()?;
+    m.add_class::<scene::Gradient>()?;
+    m.add_class::<scene::Filter>()?;
     // Shapes
-    m.add_class::<Rect>()?;
-    m.add_class::<Circle>()?;
-    m.add_class::<Ellipse>()?;
-    m.add_class::<Line>()?;
-    m.add_class::<Path>()?;
-    m.add_class::<Polygon>()?;
-    m.add_class::<Text>()?;
-    m.add_class::<Image>()?;
+    m.add_class::<shape::Rect>()?;
+    m.add_class::<shape::Circle>()?;
+    m.add_class::<shape::Ellipse>()?;
+    m.add_class::<shape::Line>()?;
+    m.add_class::<shape::Path>()?;
+    m.add_class::<shape::Polygon>()?;
+    m.add_class::<shape::Text>()?;
+    m.add_class::<shape::Image>()?;
     // Utilities
-    m.add_class::<Style>()?;
-    m.add_class::<Color>()?;
+    m.add_class::<shape::Style>()?;
+    m.add_class::<shape::Color>()?;
     // Diffing
-    m.add_class::<RenderPatch>()?;
-    m.add_function(wrap_pyfunction!(compute_patches, m)?)?;
-    m.add_function(wrap_pyfunction!(needs_redraw, m)?)?;
-    m.add_function(wrap_pyfunction!(index_scene, m)?)?;
+    m.add_class::<render::RenderPatch>()?;
+    m.add_function(wrap_pyfunction!(render::compute_patches, m)?)?;
+    m.add_function(wrap_pyfunction!(render::needs_redraw, m)?)?;
+    m.add_function(wrap_pyfunction!(render::index_scene, m)?)?;
     Ok(())
 }
 
@@ -61,8 +67,13 @@ fn iconoglott_core(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
 // Re-exports for library consumers
 // ─────────────────────────────────────────────────────────────────────────────
 
-pub use diff::{DiffOp, DiffResult, IndexedScene};
 pub use id::{ContentHash, ElementId, ElementKind, Fnv1a, IdGen};
-pub use scene::{Element, Filter, Gradient, Scene};
-pub use shape::{Circle, Color, Ellipse, Image, Line, Path, Polygon, Rect, Style, Text};
 
+#[cfg(feature = "python")]
+pub use diff::{DiffOp, DiffResult, IndexedScene};
+
+#[cfg(feature = "python")]
+pub use scene::{Element, Filter, Gradient, Scene};
+
+#[cfg(feature = "python")]
+pub use shape::{Circle, Color, Ellipse, Image, Line, Path, Polygon, Rect, Style, Text};
