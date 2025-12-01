@@ -61,7 +61,19 @@ pub fn ast_node_to_py(py: Python<'_>, node: &AstNode) -> PyObject {
         AstNode::Use(u) => {
             dict.set_item("Use", ast_use_to_py(py, u)).ok();
         }
+        AstNode::Keyframes(kf) => {
+            dict.set_item("Keyframes", ast_keyframes_to_py(py, kf)).ok();
+        }
     }
+    dict.into()
+}
+
+/// Convert Keyframes to Python dict
+pub fn ast_keyframes_to_py(py: Python<'_>, kf: &super::anim::Keyframes) -> PyObject {
+    let dict = PyDict::new(py);
+    dict.set_item("name", &kf.name).ok();
+    dict.set_item("step_count", kf.steps.len()).ok();
+    dict.set_item("css", kf.to_css()).ok();
     dict.into()
 }
 

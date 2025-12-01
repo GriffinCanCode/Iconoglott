@@ -1,5 +1,81 @@
 let wasm;
 
+function addToExternrefTable0(obj) {
+    const idx = wasm.__externref_table_alloc();
+    wasm.__wbindgen_externrefs.set(idx, obj);
+    return idx;
+}
+
+function debugString(val) {
+    // primitive types
+    const type = typeof val;
+    if (type == 'number' || type == 'boolean' || val == null) {
+        return  `${val}`;
+    }
+    if (type == 'string') {
+        return `"${val}"`;
+    }
+    if (type == 'symbol') {
+        const description = val.description;
+        if (description == null) {
+            return 'Symbol';
+        } else {
+            return `Symbol(${description})`;
+        }
+    }
+    if (type == 'function') {
+        const name = val.name;
+        if (typeof name == 'string' && name.length > 0) {
+            return `Function(${name})`;
+        } else {
+            return 'Function';
+        }
+    }
+    // objects
+    if (Array.isArray(val)) {
+        const length = val.length;
+        let debug = '[';
+        if (length > 0) {
+            debug += debugString(val[0]);
+        }
+        for(let i = 1; i < length; i++) {
+            debug += ', ' + debugString(val[i]);
+        }
+        debug += ']';
+        return debug;
+    }
+    // Test for built-in
+    const builtInMatches = /\[object ([^\]]+)\]/.exec(toString.call(val));
+    let className;
+    if (builtInMatches && builtInMatches.length > 1) {
+        className = builtInMatches[1];
+    } else {
+        // Failed to match the standard '[object ClassName]'
+        return toString.call(val);
+    }
+    if (className == 'Object') {
+        // we're a user defined class or Object
+        // JSON.stringify avoids problems with cycles, and is generally much
+        // easier than looping through ownProperties of `val`.
+        try {
+            return 'Object(' + JSON.stringify(val) + ')';
+        } catch (_) {
+            return 'Object';
+        }
+    }
+    // errors
+    if (val instanceof Error) {
+        return `${val.name}: ${val.message}\n${val.stack}`;
+    }
+    // TODO we could test for more things here, like `Set`s and `Map`s.
+    return className;
+}
+
+function getArrayU8FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
+}
+
 let cachedDataViewMemory0 = null;
 function getDataViewMemory0() {
     if (cachedDataViewMemory0 === null || cachedDataViewMemory0.buffer.detached === true || (cachedDataViewMemory0.buffer.detached === undefined && cachedDataViewMemory0.buffer !== wasm.memory.buffer)) {
@@ -19,6 +95,15 @@ function getUint8ArrayMemory0() {
         cachedUint8ArrayMemory0 = new Uint8Array(wasm.memory.buffer);
     }
     return cachedUint8ArrayMemory0;
+}
+
+function handleError(f, args) {
+    try {
+        return f.apply(this, args);
+    } catch (e) {
+        const idx = addToExternrefTable0(e);
+        wasm.__wbindgen_exn_store(idx);
+    }
 }
 
 function isLikeNone(x) {
@@ -91,107 +176,55 @@ if (!('encodeInto' in cachedTextEncoder)) {
 
 let WASM_VECTOR_LEN = 0;
 
-const WasmStyleFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_wasmstyle_free(ptr >>> 0, 1));
+/**
+ * Standard canvas sizes (10-tier system)
+ * @enum {16 | 24 | 32 | 48 | 64 | 96 | 128 | 192 | 256 | 512}
+ */
+export const CanvasSize = Object.freeze({
+    Nano: 16, "16": "Nano",
+    Micro: 24, "24": "Micro",
+    Tiny: 32, "32": "Tiny",
+    Small: 48, "48": "Small",
+    Medium: 64, "64": "Medium",
+    Large: 96, "96": "Large",
+    XLarge: 128, "128": "XLarge",
+    Huge: 192, "192": "Huge",
+    Massive: 256, "256": "Massive",
+    Giant: 512, "512": "Giant",
+});
 
-export class WasmStyle {
-    __destroy_into_raw() {
-        const ptr = this.__wbg_ptr;
-        this.__wbg_ptr = 0;
-        WasmStyleFinalization.unregister(this);
-        return ptr;
-    }
-    free() {
-        const ptr = this.__destroy_into_raw();
-        wasm.__wbg_wasmstyle_free(ptr, 0);
-    }
-    constructor() {
-        const ret = wasm.wasmstyle_new();
-        this.__wbg_ptr = ret >>> 0;
-        WasmStyleFinalization.register(this, this.__wbg_ptr, this);
-        return this;
-    }
-    /**
-     * @param {string | null} [v]
-     */
-    set fill(v) {
-        var ptr0 = isLikeNone(v) ? 0 : passStringToWasm0(v, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        var len0 = WASM_VECTOR_LEN;
-        wasm.wasmstyle_set_fill(this.__wbg_ptr, ptr0, len0);
-    }
-    /**
-     * @param {string | null} [v]
-     */
-    set stroke(v) {
-        var ptr0 = isLikeNone(v) ? 0 : passStringToWasm0(v, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        var len0 = WASM_VECTOR_LEN;
-        wasm.wasmstyle_set_stroke(this.__wbg_ptr, ptr0, len0);
-    }
-    /**
-     * @param {number} v
-     */
-    set stroke_width(v) {
-        wasm.wasmstyle_set_stroke_width(this.__wbg_ptr, v);
-    }
-    /**
-     * @param {number} v
-     */
-    set opacity(v) {
-        wasm.wasmstyle_set_opacity(this.__wbg_ptr, v);
-    }
-    /**
-     * @param {number} v
-     */
-    set corner(v) {
-        wasm.wasmstyle_set_corner(this.__wbg_ptr, v);
-    }
-    /**
-     * @param {string | null} [v]
-     */
-    set filter(v) {
-        var ptr0 = isLikeNone(v) ? 0 : passStringToWasm0(v, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        var len0 = WASM_VECTOR_LEN;
-        wasm.wasmstyle_set_filter(this.__wbg_ptr, ptr0, len0);
-    }
+/**
+ * Compute best anchor points for an edge between two nodes
+ * Returns {from: [x, y], to: [x, y]}
+ * @param {number} from_cx
+ * @param {number} from_cy
+ * @param {number} from_w
+ * @param {number} from_h
+ * @param {number} to_cx
+ * @param {number} to_cy
+ * @param {number} to_w
+ * @param {number} to_h
+ * @returns {any}
+ */
+export function compute_edge_anchors(from_cx, from_cy, from_w, from_h, to_cx, to_cy, to_w, to_h) {
+    const ret = wasm.compute_edge_anchors(from_cx, from_cy, from_w, from_h, to_cx, to_cy, to_w, to_h);
+    return ret;
 }
-if (Symbol.dispose) WasmStyle.prototype[Symbol.dispose] = WasmStyle.prototype.free;
 
 /**
  * Compute stable element ID from order, kind, and key properties
  * @param {number} order
  * @param {string} kind
- * @param {string} key_json
+ * @param {any} key
  * @returns {string}
  */
-export function compute_element_id(order, kind, key_json) {
-    let deferred3_0;
-    let deferred3_1;
-    try {
-        const ptr0 = passStringToWasm0(kind, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(key_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.compute_element_id(order, ptr0, len0, ptr1, len1);
-        deferred3_0 = ret[0];
-        deferred3_1 = ret[1];
-        return getStringFromWasm0(ret[0], ret[1]);
-    } finally {
-        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
-    }
-}
-
-/**
- * @param {string} d
- * @returns {string}
- */
-export function compute_path_bounds(d) {
+export function compute_element_id(order, kind, key) {
     let deferred2_0;
     let deferred2_1;
     try {
-        const ptr0 = passStringToWasm0(d, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr0 = passStringToWasm0(kind, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.compute_path_bounds(ptr0, len0);
+        const ret = wasm.compute_element_id(order, ptr0, len0, key);
         deferred2_0 = ret[0];
         deferred2_1 = ret[1];
         return getStringFromWasm0(ret[0], ret[1]);
@@ -201,26 +234,47 @@ export function compute_path_bounds(d) {
 }
 
 /**
- * Diff two scenes and return JSON array of operations
- * @param {string} old_json
- * @param {string} new_json
- * @returns {string}
+ * @param {string} d
+ * @returns {any}
  */
-export function diff_scenes(old_json, new_json) {
-    let deferred3_0;
-    let deferred3_1;
-    try {
-        const ptr0 = passStringToWasm0(old_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(new_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.diff_scenes(ptr0, len0, ptr1, len1);
-        deferred3_0 = ret[0];
-        deferred3_1 = ret[1];
-        return getStringFromWasm0(ret[0], ret[1]);
-    } finally {
-        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
-    }
+export function compute_path_bounds(d) {
+    const ptr0 = passStringToWasm0(d, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.compute_path_bounds(ptr0, len0);
+    return ret;
+}
+
+/**
+ * Compute text bounding box accounting for anchor position
+ * Returns [x, y, width, height]
+ * @param {number} x
+ * @param {number} y
+ * @param {string} content
+ * @param {string} font
+ * @param {number} size
+ * @param {string} anchor
+ * @returns {any}
+ */
+export function compute_text_bounds(x, y, content, font, size, anchor) {
+    const ptr0 = passStringToWasm0(content, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(font, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passStringToWasm0(anchor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.compute_text_bounds(x, y, ptr0, len0, ptr1, len1, size, ptr2, len2);
+    return ret;
+}
+
+/**
+ * Diff two scenes and return operations
+ * @param {any} old
+ * @param {any} _new
+ * @returns {any}
+ */
+export function diff_scenes(old, _new) {
+    const ret = wasm.diff_scenes(old, _new);
+    return ret;
 }
 
 /**
@@ -243,8 +297,87 @@ export function fnv1a_hash(data) {
     }
 }
 
+/**
+ * Get all valid size names as array
+ * @returns {any}
+ */
+export function get_all_sizes() {
+    const ret = wasm.get_all_sizes();
+    return ret;
+}
+
+/**
+ * Get size info as object: {name, width, height}
+ * @param {string} name
+ * @returns {any}
+ */
+export function get_size_info(name) {
+    const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.get_size_info(ptr0, len0);
+    return ret;
+}
+
 export function init() {
     wasm.init();
+}
+
+/**
+ * Check if a size name is valid
+ * @param {string} name
+ * @returns {boolean}
+ */
+export function is_valid_size(name) {
+    const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.is_valid_size(ptr0, len0);
+    return ret !== 0;
+}
+
+/**
+ * Apply grid layout to nodes
+ * Input: array of {id, w, h}
+ * Output: array of {id, cx, cy}
+ * @param {any} nodes
+ * @param {number} spacing
+ * @returns {any}
+ */
+export function layout_grid(nodes, spacing) {
+    const ret = wasm.layout_grid(nodes, spacing);
+    return ret;
+}
+
+/**
+ * Apply hierarchical layout to nodes
+ * Input: array of {id, w, h}
+ * Output: array of {id, cx, cy}
+ * @param {any} nodes
+ * @param {string} direction
+ * @param {number} spacing
+ * @returns {any}
+ */
+export function layout_hierarchical(nodes, direction, spacing) {
+    const ptr0 = passStringToWasm0(direction, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.layout_hierarchical(nodes, ptr0, len0, spacing);
+    return ret;
+}
+
+/**
+ * Measure text dimensions using font metrics
+ * Returns {width, height, ascender, descender}
+ * @param {string} content
+ * @param {string} font
+ * @param {number} size
+ * @returns {any}
+ */
+export function measure_text(content, font, size) {
+    const ptr0 = passStringToWasm0(content, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(font, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.measure_text(ptr0, len0, ptr1, len1, size);
+    return ret;
 }
 
 /**
@@ -268,7 +401,7 @@ export function parse(source) {
 }
 
 /**
- * Parse and return errors as JSON
+ * Parse and return errors as JSON (includes both parse and resolution errors)
  * @param {string} source
  * @returns {string}
  */
@@ -279,6 +412,26 @@ export function parse_with_errors(source) {
         const ptr0 = passStringToWasm0(source, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.parse_with_errors(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * Render arrow marker definitions (call once per SVG if using edges)
+ * @param {string} color
+ * @returns {string}
+ */
+export function render_arrow_markers(color) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(color, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.render_arrow_markers(ptr0, len0);
         deferred2_0 = ret[0];
         deferred2_1 = ret[1];
         return getStringFromWasm0(ret[0], ret[1]);
@@ -311,24 +464,81 @@ export function render_blur_filter(id, blur) {
  * @param {number} cx
  * @param {number} cy
  * @param {number} r
- * @param {string} style_json
+ * @param {any} style
  * @param {string | null} [transform]
  * @returns {string}
  */
-export function render_circle(cx, cy, r, style_json, transform) {
-    let deferred3_0;
-    let deferred3_1;
+export function render_circle(cx, cy, r, style, transform) {
+    let deferred2_0;
+    let deferred2_1;
     try {
-        const ptr0 = passStringToWasm0(style_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        var ptr1 = isLikeNone(transform) ? 0 : passStringToWasm0(transform, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        var len1 = WASM_VECTOR_LEN;
-        const ret = wasm.render_circle(cx, cy, r, ptr0, len0, ptr1, len1);
-        deferred3_0 = ret[0];
-        deferred3_1 = ret[1];
+        var ptr0 = isLikeNone(transform) ? 0 : passStringToWasm0(transform, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len0 = WASM_VECTOR_LEN;
+        const ret = wasm.render_circle(cx, cy, r, style, ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
         return getStringFromWasm0(ret[0], ret[1]);
     } finally {
-        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * Render a diamond shape (rotated rectangle for flowcharts)
+ * @param {number} cx
+ * @param {number} cy
+ * @param {number} w
+ * @param {number} h
+ * @param {any} style
+ * @param {string | null} [transform]
+ * @returns {string}
+ */
+export function render_diamond(cx, cy, w, h, style, transform) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        var ptr0 = isLikeNone(transform) ? 0 : passStringToWasm0(transform, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len0 = WASM_VECTOR_LEN;
+        const ret = wasm.render_diamond(cx, cy, w, h, style, ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * Render an edge (connector with optional arrow)
+ * @param {number} from_x
+ * @param {number} from_y
+ * @param {number} to_x
+ * @param {number} to_y
+ * @param {string} edge_style
+ * @param {string} arrow
+ * @param {string | null | undefined} label
+ * @param {string} stroke
+ * @param {number} stroke_width
+ * @returns {string}
+ */
+export function render_edge(from_x, from_y, to_x, to_y, edge_style, arrow, label, stroke, stroke_width) {
+    let deferred5_0;
+    let deferred5_1;
+    try {
+        const ptr0 = passStringToWasm0(edge_style, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(arrow, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        var ptr2 = isLikeNone(label) ? 0 : passStringToWasm0(label, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(stroke, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ret = wasm.render_edge(from_x, from_y, to_x, to_y, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, stroke_width);
+        deferred5_0 = ret[0];
+        deferred5_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred5_0, deferred5_1, 1);
     }
 }
 
@@ -337,24 +547,22 @@ export function render_circle(cx, cy, r, style_json, transform) {
  * @param {number} cy
  * @param {number} rx
  * @param {number} ry
- * @param {string} style_json
+ * @param {any} style
  * @param {string | null} [transform]
  * @returns {string}
  */
-export function render_ellipse(cx, cy, rx, ry, style_json, transform) {
-    let deferred3_0;
-    let deferred3_1;
+export function render_ellipse(cx, cy, rx, ry, style, transform) {
+    let deferred2_0;
+    let deferred2_1;
     try {
-        const ptr0 = passStringToWasm0(style_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        var ptr1 = isLikeNone(transform) ? 0 : passStringToWasm0(transform, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        var len1 = WASM_VECTOR_LEN;
-        const ret = wasm.render_ellipse(cx, cy, rx, ry, ptr0, len0, ptr1, len1);
-        deferred3_0 = ret[0];
-        deferred3_1 = ret[1];
+        var ptr0 = isLikeNone(transform) ? 0 : passStringToWasm0(transform, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len0 = WASM_VECTOR_LEN;
+        const ret = wasm.render_ellipse(cx, cy, rx, ry, style, ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
         return getStringFromWasm0(ret[0], ret[1]);
     } finally {
-        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
     }
 }
 
@@ -438,22 +646,28 @@ export function render_linear_gradient(id, from_color, to_color, angle) {
 }
 
 /**
- * @param {string} d
- * @param {string} style_json
- * @param {string | null} [transform]
+ * Render a graph node (shape + label)
+ * @param {string} id
+ * @param {string} shape
+ * @param {number} cx
+ * @param {number} cy
+ * @param {number} w
+ * @param {number} h
+ * @param {string | null | undefined} label
+ * @param {any} style
  * @returns {string}
  */
-export function render_path(d, style_json, transform) {
+export function render_node(id, shape, cx, cy, w, h, label, style) {
     let deferred4_0;
     let deferred4_1;
     try {
-        const ptr0 = passStringToWasm0(d, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr0 = passStringToWasm0(id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(style_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr1 = passStringToWasm0(shape, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
-        var ptr2 = isLikeNone(transform) ? 0 : passStringToWasm0(transform, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var ptr2 = isLikeNone(label) ? 0 : passStringToWasm0(label, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         var len2 = WASM_VECTOR_LEN;
-        const ret = wasm.render_path(ptr0, len0, ptr1, len1, ptr2, len2);
+        const ret = wasm.render_node(ptr0, len0, ptr1, len1, cx, cy, w, h, ptr2, len2, style);
         deferred4_0 = ret[0];
         deferred4_1 = ret[1];
         return getStringFromWasm0(ret[0], ret[1]);
@@ -463,27 +677,46 @@ export function render_path(d, style_json, transform) {
 }
 
 /**
- * @param {string} points_json
- * @param {string} style_json
+ * @param {string} d
+ * @param {any} style
  * @param {string | null} [transform]
  * @returns {string}
  */
-export function render_polygon(points_json, style_json, transform) {
-    let deferred4_0;
-    let deferred4_1;
+export function render_path(d, style, transform) {
+    let deferred3_0;
+    let deferred3_1;
     try {
-        const ptr0 = passStringToWasm0(points_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr0 = passStringToWasm0(d, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(style_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        var ptr2 = isLikeNone(transform) ? 0 : passStringToWasm0(transform, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        var len2 = WASM_VECTOR_LEN;
-        const ret = wasm.render_polygon(ptr0, len0, ptr1, len1, ptr2, len2);
-        deferred4_0 = ret[0];
-        deferred4_1 = ret[1];
+        var ptr1 = isLikeNone(transform) ? 0 : passStringToWasm0(transform, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len1 = WASM_VECTOR_LEN;
+        const ret = wasm.render_path(ptr0, len0, style, ptr1, len1);
+        deferred3_0 = ret[0];
+        deferred3_1 = ret[1];
         return getStringFromWasm0(ret[0], ret[1]);
     } finally {
-        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
+ * @param {any} points
+ * @param {any} style
+ * @param {string | null} [transform]
+ * @returns {string}
+ */
+export function render_polygon(points, style, transform) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        var ptr0 = isLikeNone(transform) ? 0 : passStringToWasm0(transform, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len0 = WASM_VECTOR_LEN;
+        const ret = wasm.render_polygon(points, style, ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
     }
 }
 
@@ -518,51 +751,51 @@ export function render_radial_gradient(id, from_color, to_color) {
  * @param {number} w
  * @param {number} h
  * @param {number} rx
- * @param {string} style_json
+ * @param {any} style
  * @param {string | null} [transform]
  * @returns {string}
  */
-export function render_rect(x, y, w, h, rx, style_json, transform) {
-    let deferred3_0;
-    let deferred3_1;
+export function render_rect(x, y, w, h, rx, style, transform) {
+    let deferred2_0;
+    let deferred2_1;
     try {
-        const ptr0 = passStringToWasm0(style_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        var ptr1 = isLikeNone(transform) ? 0 : passStringToWasm0(transform, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        var len1 = WASM_VECTOR_LEN;
-        const ret = wasm.render_rect(x, y, w, h, rx, ptr0, len0, ptr1, len1);
-        deferred3_0 = ret[0];
-        deferred3_1 = ret[1];
+        var ptr0 = isLikeNone(transform) ? 0 : passStringToWasm0(transform, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len0 = WASM_VECTOR_LEN;
+        const ret = wasm.render_rect(x, y, w, h, rx, style, ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
         return getStringFromWasm0(ret[0], ret[1]);
     } finally {
-        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
     }
 }
 
 /**
- * @param {number} width
- * @param {number} height
+ * Render complete scene SVG using standardized size
+ * @param {string} size_name
  * @param {string} background
  * @param {string} defs
  * @param {string} elements_svg
  * @returns {string}
  */
-export function render_scene(width, height, background, defs, elements_svg) {
-    let deferred4_0;
-    let deferred4_1;
+export function render_scene(size_name, background, defs, elements_svg) {
+    let deferred5_0;
+    let deferred5_1;
     try {
-        const ptr0 = passStringToWasm0(background, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr0 = passStringToWasm0(size_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(defs, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr1 = passStringToWasm0(background, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
-        const ptr2 = passStringToWasm0(elements_svg, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr2 = passStringToWasm0(defs, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len2 = WASM_VECTOR_LEN;
-        const ret = wasm.render_scene(width, height, ptr0, len0, ptr1, len1, ptr2, len2);
-        deferred4_0 = ret[0];
-        deferred4_1 = ret[1];
+        const ptr3 = passStringToWasm0(elements_svg, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ret = wasm.render_scene(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
+        deferred5_0 = ret[0];
+        deferred5_1 = ret[1];
         return getStringFromWasm0(ret[0], ret[1]);
     } finally {
-        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+        wasm.__wbindgen_free(deferred5_0, deferred5_1, 1);
     }
 }
 
@@ -583,6 +816,32 @@ export function render_shadow_filter(id, dx, dy, blur, color) {
         const ptr1 = passStringToWasm0(color, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
         const ret = wasm.render_shadow_filter(ptr0, len0, dx, dy, blur, ptr1, len1);
+        deferred3_0 = ret[0];
+        deferred3_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
+ * Render a symbol definition (goes in <defs>)
+ * content: inner SVG elements as string
+ * viewbox: optional [x, y, width, height]
+ * @param {string} id
+ * @param {string} content
+ * @param {any} viewbox
+ * @returns {string}
+ */
+export function render_symbol(id, content, viewbox) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(content, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.render_symbol(ptr0, len0, ptr1, len1, viewbox);
         deferred3_0 = ret[0];
         deferred3_1 = ret[1];
         return getStringFromWasm0(ret[0], ret[1]);
@@ -629,18 +888,55 @@ export function render_text(x, y, content, font, size, weight, anchor, fill, tra
 }
 
 /**
+ * Render a use element (references a symbol)
+ * @param {string} href
+ * @param {number} x
+ * @param {number} y
+ * @param {any} width
+ * @param {any} height
+ * @param {any} style
+ * @param {string | null} [transform]
+ * @returns {string}
+ */
+export function render_use(href, x, y, width, height, style, transform) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(href, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        var ptr1 = isLikeNone(transform) ? 0 : passStringToWasm0(transform, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len1 = WASM_VECTOR_LEN;
+        const ret = wasm.render_use(ptr0, len0, x, y, width, height, style, ptr1, len1);
+        deferred3_0 = ret[0];
+        deferred3_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
  * Check if two scenes need any updates (fast path)
- * @param {string} old_json
- * @param {string} new_json
+ * @param {any} old
+ * @param {any} _new
  * @returns {boolean}
  */
-export function scenes_equal(old_json, new_json) {
-    const ptr0 = passStringToWasm0(old_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passStringToWasm0(new_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.scenes_equal(ptr0, len0, ptr1, len1);
+export function scenes_equal(old, _new) {
+    const ret = wasm.scenes_equal(old, _new);
     return ret !== 0;
+}
+
+/**
+ * Get pixel dimensions for a named size
+ * Returns [width, height] or null if invalid
+ * @param {string} name
+ * @returns {any}
+ */
+export function size_to_pixels(name) {
+    const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.size_to_pixels(ptr0, len0);
+    return ret;
 }
 
 /**
@@ -697,8 +993,67 @@ async function __wbg_load(module, imports) {
 function __wbg_get_imports() {
     const imports = {};
     imports.wbg = {};
+    imports.wbg.__wbg_Error_52673b7de5a0ca89 = function(arg0, arg1) {
+        const ret = Error(getStringFromWasm0(arg0, arg1));
+        return ret;
+    };
+    imports.wbg.__wbg___wbindgen_boolean_get_dea25b33882b895b = function(arg0) {
+        const v = arg0;
+        const ret = typeof(v) === 'boolean' ? v : undefined;
+        return isLikeNone(ret) ? 0xFFFFFF : ret ? 1 : 0;
+    };
+    imports.wbg.__wbg___wbindgen_debug_string_adfb662ae34724b6 = function(arg0, arg1) {
+        const ret = debugString(arg1);
+        const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+        getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
+    };
+    imports.wbg.__wbg___wbindgen_in_0d3e1e8f0c669317 = function(arg0, arg1) {
+        const ret = arg0 in arg1;
+        return ret;
+    };
+    imports.wbg.__wbg___wbindgen_is_function_8d400b8b1af978cd = function(arg0) {
+        const ret = typeof(arg0) === 'function';
+        return ret;
+    };
+    imports.wbg.__wbg___wbindgen_is_object_ce774f3490692386 = function(arg0) {
+        const val = arg0;
+        const ret = typeof(val) === 'object' && val !== null;
+        return ret;
+    };
+    imports.wbg.__wbg___wbindgen_is_undefined_f6b95eab589e0269 = function(arg0) {
+        const ret = arg0 === undefined;
+        return ret;
+    };
+    imports.wbg.__wbg___wbindgen_jsval_loose_eq_766057600fdd1b0d = function(arg0, arg1) {
+        const ret = arg0 == arg1;
+        return ret;
+    };
+    imports.wbg.__wbg___wbindgen_number_get_9619185a74197f95 = function(arg0, arg1) {
+        const obj = arg1;
+        const ret = typeof(obj) === 'number' ? obj : undefined;
+        getDataViewMemory0().setFloat64(arg0 + 8 * 1, isLikeNone(ret) ? 0 : ret, true);
+        getDataViewMemory0().setInt32(arg0 + 4 * 0, !isLikeNone(ret), true);
+    };
+    imports.wbg.__wbg___wbindgen_string_get_a2a31e16edf96e42 = function(arg0, arg1) {
+        const obj = arg1;
+        const ret = typeof(obj) === 'string' ? obj : undefined;
+        var ptr1 = isLikeNone(ret) ? 0 : passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len1 = WASM_VECTOR_LEN;
+        getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+        getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
+    };
     imports.wbg.__wbg___wbindgen_throw_dd24417ed36fc46e = function(arg0, arg1) {
         throw new Error(getStringFromWasm0(arg0, arg1));
+    };
+    imports.wbg.__wbg_call_abb4ff46ce38be40 = function() { return handleError(function (arg0, arg1) {
+        const ret = arg0.call(arg1);
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_done_62ea16af4ce34b24 = function(arg0) {
+        const ret = arg0.done;
+        return ret;
     };
     imports.wbg.__wbg_error_7534b8e9a36f1ab4 = function(arg0, arg1) {
         let deferred0_0;
@@ -711,9 +1066,86 @@ function __wbg_get_imports() {
             wasm.__wbindgen_free(deferred0_0, deferred0_1, 1);
         }
     };
+    imports.wbg.__wbg_get_6b7bd52aca3f9671 = function(arg0, arg1) {
+        const ret = arg0[arg1 >>> 0];
+        return ret;
+    };
+    imports.wbg.__wbg_get_af9dab7e9603ea93 = function() { return handleError(function (arg0, arg1) {
+        const ret = Reflect.get(arg0, arg1);
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_get_with_ref_key_1dc361bd10053bfe = function(arg0, arg1) {
+        const ret = arg0[arg1];
+        return ret;
+    };
+    imports.wbg.__wbg_instanceof_ArrayBuffer_f3320d2419cd0355 = function(arg0) {
+        let result;
+        try {
+            result = arg0 instanceof ArrayBuffer;
+        } catch (_) {
+            result = false;
+        }
+        const ret = result;
+        return ret;
+    };
+    imports.wbg.__wbg_instanceof_Uint8Array_da54ccc9d3e09434 = function(arg0) {
+        let result;
+        try {
+            result = arg0 instanceof Uint8Array;
+        } catch (_) {
+            result = false;
+        }
+        const ret = result;
+        return ret;
+    };
+    imports.wbg.__wbg_isArray_51fd9e6422c0a395 = function(arg0) {
+        const ret = Array.isArray(arg0);
+        return ret;
+    };
+    imports.wbg.__wbg_iterator_27b7c8b35ab3e86b = function() {
+        const ret = Symbol.iterator;
+        return ret;
+    };
+    imports.wbg.__wbg_length_22ac23eaec9d8053 = function(arg0) {
+        const ret = arg0.length;
+        return ret;
+    };
+    imports.wbg.__wbg_length_d45040a40c570362 = function(arg0) {
+        const ret = arg0.length;
+        return ret;
+    };
+    imports.wbg.__wbg_new_1ba21ce319a06297 = function() {
+        const ret = new Object();
+        return ret;
+    };
+    imports.wbg.__wbg_new_25f239778d6112b9 = function() {
+        const ret = new Array();
+        return ret;
+    };
+    imports.wbg.__wbg_new_6421f6084cc5bc5a = function(arg0) {
+        const ret = new Uint8Array(arg0);
+        return ret;
+    };
     imports.wbg.__wbg_new_8a6f238a6ece86ea = function() {
         const ret = new Error();
         return ret;
+    };
+    imports.wbg.__wbg_next_138a17bbf04e926c = function(arg0) {
+        const ret = arg0.next;
+        return ret;
+    };
+    imports.wbg.__wbg_next_3cfe5c0fe2a4cc53 = function() { return handleError(function (arg0) {
+        const ret = arg0.next();
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_prototypesetcall_dfe9b766cdc1f1fd = function(arg0, arg1, arg2) {
+        Uint8Array.prototype.set.call(getArrayU8FromWasm0(arg0, arg1), arg2);
+    };
+    imports.wbg.__wbg_set_3f1d0b984ed272ed = function(arg0, arg1, arg2) {
+        arg0[arg1] = arg2;
+    };
+    imports.wbg.__wbg_set_7df433eea03a5c14 = function(arg0, arg1, arg2) {
+        arg0[arg1 >>> 0] = arg2;
     };
     imports.wbg.__wbg_stack_0ed75d68575b0f3c = function(arg0, arg1) {
         const ret = arg1.stack;
@@ -721,6 +1153,29 @@ function __wbg_get_imports() {
         const len1 = WASM_VECTOR_LEN;
         getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
         getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
+    };
+    imports.wbg.__wbg_stringify_655a6390e1f5eb6b = function() { return handleError(function (arg0) {
+        const ret = JSON.stringify(arg0);
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_value_57b7b035e117f7ee = function(arg0) {
+        const ret = arg0.value;
+        return ret;
+    };
+    imports.wbg.__wbindgen_cast_2241b6af4c4b2941 = function(arg0, arg1) {
+        // Cast intrinsic for `Ref(String) -> Externref`.
+        const ret = getStringFromWasm0(arg0, arg1);
+        return ret;
+    };
+    imports.wbg.__wbindgen_cast_4625c577ab2ec9ee = function(arg0) {
+        // Cast intrinsic for `U64 -> Externref`.
+        const ret = BigInt.asUintN(64, arg0);
+        return ret;
+    };
+    imports.wbg.__wbindgen_cast_d6cd19b81560fd6e = function(arg0) {
+        // Cast intrinsic for `F64 -> Externref`.
+        const ret = arg0;
+        return ret;
     };
     imports.wbg.__wbindgen_init_externref_table = function() {
         const table = wasm.__wbindgen_externrefs;

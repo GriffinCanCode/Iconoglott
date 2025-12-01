@@ -11,8 +11,9 @@ import type { Path } from "./Path";
 import type { Polygon } from "./Polygon";
 import type { Rect } from "./Rect";
 import type { TextShape } from "./TextShape";
+import type { Use } from "./Use";
 
 /**
  * A renderable element in the scene
  */
-export type Element = { "Rect": Rect } | { "Circle": Circle } | { "Ellipse": Ellipse } | { "Line": Line } | { "Path": Path } | { "Polygon": Polygon } | { "Text": TextShape } | { "Image": ImageShape } | { "Diamond": Diamond } | { "Node": GraphNodeShape } | { "Edge": Edge } | { "Group": [Array<Element>, string | null] } | { "Graph": GraphContainer };
+export type Element = { "Rect": Rect } | { "Circle": Circle } | { "Ellipse": Ellipse } | { "Line": Line } | { "Path": Path } | { "Polygon": Polygon } | { "Text": TextShape } | { "Image": ImageShape } | { "Diamond": Diamond } | { "Node": GraphNodeShape } | { "Edge": Edge } | { "Group": [Array<Element>, string | null] } | { "Graph": GraphContainer } | { "Use": Use };

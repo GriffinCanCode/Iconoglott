@@ -60,6 +60,8 @@ pub struct Style {
     pub opacity: f32,
     pub corner: f32,
     pub filter: Option<String>,
+    /// Animation class name (references CSS animation)
+    pub animation_class: Option<String>,
 }
 
 #[cfg(feature = "python")]
@@ -68,7 +70,7 @@ impl Style {
     #[new]
     #[pyo3(signature = (fill=None, stroke=None, stroke_width=1.0, opacity=1.0, corner=0.0, filter=None))]
     fn py_new(fill: Option<String>, stroke: Option<String>, stroke_width: f32, opacity: f32, corner: f32, filter: Option<String>) -> Self {
-        Self { fill, stroke, stroke_width, opacity, corner, filter }
+        Self { fill, stroke, stroke_width, opacity, corner, filter, animation_class: None }
     }
 }
 
@@ -76,13 +78,27 @@ impl Style {
     pub fn with_fill(fill: &str) -> Self {
         Self { fill: Some(fill.into()), opacity: 1.0, stroke_width: 1.0, ..Default::default() }
     }
+    
+    pub fn with_animation_class(class: &str) -> Self {
+        Self { animation_class: Some(class.into()), opacity: 1.0, stroke_width: 1.0, ..Default::default() }
+    }
+    
     pub fn to_svg_attrs(&self) -> String {
-        let mut attrs = Vec::with_capacity(4);
+        let mut attrs = Vec::with_capacity(5);
         if let Some(ref fill) = self.fill { attrs.push(format!(r#"fill="{}""#, fill)); }
         if let Some(ref stroke) = self.stroke { attrs.push(format!(r#"stroke="{}" stroke-width="{}""#, stroke, self.stroke_width)); }
         if self.opacity < 1.0 { attrs.push(format!(r#"opacity="{}""#, self.opacity)); }
         if let Some(ref filter) = self.filter { attrs.push(format!(r#"filter="url(#{})""#, filter)); }
+        if let Some(ref class) = self.animation_class { attrs.push(format!(r#"class="{}""#, class)); }
         if attrs.is_empty() { String::new() } else { format!(" {}", attrs.join(" ")) }
+    }
+    
+    /// Generate style attribute with animation CSS
+    pub fn to_style_attr(&self, anim_css: Option<&str>) -> String {
+        match anim_css {
+            Some(css) => format!(r#" style="{}""#, css),
+            None => String::new(),
+        }
     }
 }
 

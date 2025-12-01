@@ -26,7 +26,19 @@ lazy_static::lazy_static! {
             .into_iter().collect()
     };
     pub(crate) static ref STYLE_PROPS: HashSet<&'static str> = {
-        ["fill", "stroke", "opacity", "corner", "shadow", "gradient", "blur"]
+        ["fill", "stroke", "opacity", "corner", "shadow", "gradient", "blur", "animate", "transition"]
+            .into_iter().collect()
+    };
+    pub(crate) static ref EASING_FUNCS: HashSet<&'static str> = {
+        ["linear", "ease", "ease-in", "ease-out", "ease-in-out"]
+            .into_iter().collect()
+    };
+    pub(crate) static ref ANIM_DIRECTIONS: HashSet<&'static str> = {
+        ["normal", "reverse", "alternate", "alternate-reverse"]
+            .into_iter().collect()
+    };
+    pub(crate) static ref FILL_MODES: HashSet<&'static str> = {
+        ["none", "forwards", "backwards", "both"]
             .into_iter().collect()
     };
     pub(crate) static ref TEXT_PROPS: HashSet<&'static str> = {
@@ -276,6 +288,11 @@ impl Parser {
 
         if tok.ttype == TokenType::Var {
             return self.parse_variable();
+        }
+
+        // Handle @keyframes directive
+        if tok.ttype == TokenType::AtKeyframes {
+            return Some(self.parse_keyframes());
         }
 
         // Handle unexpected token at statement start
@@ -1780,6 +1797,16 @@ impl Parser {
             "gradient" => {
                 shape.gradient = Some(self.parse_gradient());
             }
+            "animate" => {
+                let anim = self.parse_animation();
+                let state = shape.animation.get_or_insert(super::anim::AnimationState::default());
+                state.animation = Some(anim);
+            }
+            "transition" => {
+                let trans = self.parse_transition_prop();
+                let state = shape.animation.get_or_insert(super::anim::AnimationState::default());
+                state.add_transition(trans);
+            }
             _ => {}
         }
     }
@@ -1966,6 +1993,378 @@ impl Parser {
         }
 
         gradient
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Animation Parsing
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Parse @keyframes definition
+    fn parse_keyframes(&mut self) -> AstNode {
+        use super::anim::{Keyframes, KeyframeStep, AnimatableProperty};
+        
+        self.advance(); // consume @keyframes
+        
+        let mut keyframes = Keyframes::default();
+        
+        // Parse name (identifier or string)
+        if self.matches(&[TokenType::Ident, TokenType::String]) {
+            if let Some(tok) = self.advance() {
+                if let TokenValue::Str(s) = &tok.value {
+                    keyframes.name = s.clone();
+                }
+            }
+        } else {
+            self.error_at_current("Expected keyframes name", ErrorKind::MissingToken, Some("@keyframes fade-in"));
+        }
+        
+        self.skip_newlines();
+        
+        // Parse block with keyframe steps
+        if self.matches(&[TokenType::Indent]) {
+            self.advance();
+            
+            while let Some(tok) = self.current() {
+                if tok.ttype == TokenType::Dedent { self.advance(); break; }
+                if tok.ttype == TokenType::Eof {
+                    self.error_at_current("Unexpected end of file in keyframes block", ErrorKind::UnterminatedBlock, None);
+                    break;
+                }
+                
+                self.skip_newlines();
+                if self.matches(&[TokenType::Dedent]) { self.advance(); break; }
+                
+                // Parse keyframe step (e.g., "0%", "50%", "100%")
+                if self.matches(&[TokenType::Percent, TokenType::Number]) {
+                    let offset = if let Some(t) = self.advance() {
+                        match t.value {
+                            TokenValue::Num(n) => n,
+                            _ => 0.0,
+                        }
+                    } else { 0.0 };
+                    
+                    let mut step = KeyframeStep::new(offset);
+                    
+                    // Parse properties on same line or in indented block
+                    while let Some(tok) = self.current() {
+                        if self.matches(&[TokenType::Newline, TokenType::Eof, TokenType::Dedent]) { break; }
+                        
+                        match tok.ttype {
+                            TokenType::Ident => {
+                                let prop = match &tok.value {
+                                    TokenValue::Str(s) => s.clone(),
+                                    _ => { self.advance(); continue; }
+                                };
+                                self.advance();
+                                
+                                if let Some(anim_prop) = self.parse_animatable_property(&prop) {
+                                    step.properties.push(anim_prop);
+                                }
+                            }
+                            _ => { self.advance(); }
+                        }
+                    }
+                    
+                    // Check for indented block with more properties
+                    self.skip_newlines();
+                    if self.matches(&[TokenType::Indent]) {
+                        self.advance();
+                        self.parse_keyframe_block(&mut step);
+                    }
+                    
+                    keyframes.steps.push(step);
+                } else {
+                    self.advance();
+                }
+            }
+        }
+        
+        AstNode::Keyframes(keyframes)
+    }
+    
+    /// Parse keyframe step block for additional properties
+    fn parse_keyframe_block(&mut self, step: &mut super::anim::KeyframeStep) {
+        while let Some(tok) = self.current() {
+            if tok.ttype == TokenType::Dedent { self.advance(); break; }
+            if tok.ttype == TokenType::Eof { break; }
+            
+            self.skip_newlines();
+            if self.matches(&[TokenType::Dedent]) { self.advance(); break; }
+            
+            if let Some(tok) = self.current() {
+                if tok.ttype == TokenType::Ident {
+                    let prop = match &tok.value {
+                        TokenValue::Str(s) => s.clone(),
+                        _ => { self.advance(); continue; }
+                    };
+                    self.advance();
+                    
+                    if let Some(anim_prop) = self.parse_animatable_property(&prop) {
+                        step.properties.push(anim_prop);
+                    }
+                } else {
+                    self.advance();
+                }
+            }
+        }
+    }
+    
+    /// Parse an animatable property and its value
+    fn parse_animatable_property(&mut self, prop: &str) -> Option<super::anim::AnimatableProperty> {
+        use super::anim::AnimatableProperty;
+        
+        match prop {
+            "opacity" => {
+                if self.matches(&[TokenType::Number]) {
+                    if let Some(t) = self.advance() {
+                        if let TokenValue::Num(n) = t.value {
+                            return Some(AnimatableProperty::Opacity(n));
+                        }
+                    }
+                }
+            }
+            "fill" => {
+                if self.matches(&[TokenType::Color, TokenType::Ident]) {
+                    if let Some(t) = self.advance() {
+                        if let TokenValue::Str(s) = &t.value {
+                            return Some(AnimatableProperty::Fill(s.clone()));
+                        }
+                    }
+                }
+            }
+            "stroke" => {
+                if self.matches(&[TokenType::Color, TokenType::Ident]) {
+                    if let Some(t) = self.advance() {
+                        if let TokenValue::Str(s) = &t.value {
+                            return Some(AnimatableProperty::Stroke(s.clone()));
+                        }
+                    }
+                }
+            }
+            "stroke-width" => {
+                if self.matches(&[TokenType::Number]) {
+                    if let Some(t) = self.advance() {
+                        if let TokenValue::Num(n) = t.value {
+                            return Some(AnimatableProperty::StrokeWidth(n));
+                        }
+                    }
+                }
+            }
+            "rotate" => {
+                if self.matches(&[TokenType::Number]) {
+                    if let Some(t) = self.advance() {
+                        if let TokenValue::Num(n) = t.value {
+                            return Some(AnimatableProperty::Rotate(n));
+                        }
+                    }
+                }
+            }
+            "scale" => {
+                if self.matches(&[TokenType::Pair]) {
+                    if let Some(t) = self.advance() {
+                        if let TokenValue::Pair(x, y) = t.value {
+                            return Some(AnimatableProperty::Scale(x, y));
+                        }
+                    }
+                } else if self.matches(&[TokenType::Number]) {
+                    if let Some(t) = self.advance() {
+                        if let TokenValue::Num(n) = t.value {
+                            return Some(AnimatableProperty::Scale(n, n));
+                        }
+                    }
+                }
+            }
+            "translate" => {
+                if self.matches(&[TokenType::Pair]) {
+                    if let Some(t) = self.advance() {
+                        if let TokenValue::Pair(x, y) = t.value {
+                            return Some(AnimatableProperty::Translate(x, y));
+                        }
+                    }
+                }
+            }
+            "transform" => {
+                if self.matches(&[TokenType::String]) {
+                    if let Some(t) = self.advance() {
+                        if let TokenValue::Str(s) = &t.value {
+                            return Some(AnimatableProperty::Transform(s.clone()));
+                        }
+                    }
+                }
+            }
+            "r" | "radius" => {
+                if self.matches(&[TokenType::Number]) {
+                    if let Some(t) = self.advance() {
+                        if let TokenValue::Num(n) = t.value {
+                            return Some(AnimatableProperty::R(n));
+                        }
+                    }
+                }
+            }
+            "width" => {
+                if self.matches(&[TokenType::Number]) {
+                    if let Some(t) = self.advance() {
+                        if let TokenValue::Num(n) = t.value {
+                            return Some(AnimatableProperty::Width(n));
+                        }
+                    }
+                }
+            }
+            "height" => {
+                if self.matches(&[TokenType::Number]) {
+                    if let Some(t) = self.advance() {
+                        if let TokenValue::Num(n) = t.value {
+                            return Some(AnimatableProperty::Height(n));
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        None
+    }
+    
+    /// Parse animate property on a shape
+    fn parse_animation(&mut self) -> super::anim::Animation {
+        use super::anim::{Animation, Duration, Easing, Direction, FillMode, Iteration};
+        
+        let mut anim = Animation::default();
+        
+        // First token should be animation name (identifier or string)
+        if self.matches(&[TokenType::Ident, TokenType::String]) {
+            if let Some(tok) = self.advance() {
+                if let TokenValue::Str(s) = &tok.value {
+                    anim.name = s.clone();
+                }
+            }
+        }
+        
+        // Parse animation properties (duration, easing, iterations, etc.)
+        while let Some(tok) = self.current() {
+            if self.matches(&[TokenType::Newline, TokenType::Eof, TokenType::Dedent]) { break; }
+            
+            match tok.ttype {
+                TokenType::Duration => {
+                    if let Some(t) = self.advance() {
+                        if let TokenValue::Num(ms) = t.value {
+                            anim.duration = Duration::ms(ms);
+                        }
+                    }
+                }
+                TokenType::Number => {
+                    // Could be iteration count or delay
+                    if let Some(t) = self.advance() {
+                        if let TokenValue::Num(n) = t.value {
+                            anim.iteration = Iteration::Count(n);
+                        }
+                    }
+                }
+                TokenType::Ident => {
+                    let val = match &tok.value {
+                        TokenValue::Str(s) => s.clone(),
+                        _ => { self.advance(); continue; }
+                    };
+                    self.advance();
+                    
+                    match val.as_str() {
+                        // Easing functions
+                        "linear" => anim.easing = Easing::Linear,
+                        "ease" => anim.easing = Easing::Ease,
+                        "ease-in" => anim.easing = Easing::EaseIn,
+                        "ease-out" => anim.easing = Easing::EaseOut,
+                        "ease-in-out" => anim.easing = Easing::EaseInOut,
+                        // Iteration
+                        "infinite" => anim.iteration = Iteration::Infinite,
+                        // Direction
+                        "normal" => anim.direction = Direction::Normal,
+                        "reverse" => anim.direction = Direction::Reverse,
+                        "alternate" => anim.direction = Direction::Alternate,
+                        "alternate-reverse" => anim.direction = Direction::AlternateReverse,
+                        // Fill mode
+                        "forwards" => anim.fill_mode = FillMode::Forwards,
+                        "backwards" => anim.fill_mode = FillMode::Backwards,
+                        "both" => anim.fill_mode = FillMode::Both,
+                        // Delay keyword
+                        "delay" => {
+                            if self.matches(&[TokenType::Duration]) {
+                                if let Some(t) = self.advance() {
+                                    if let TokenValue::Num(ms) = t.value {
+                                        anim.delay = Duration::ms(ms);
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => { self.advance(); }
+            }
+        }
+        
+        anim
+    }
+    
+    /// Parse transition property on a shape
+    fn parse_transition_prop(&mut self) -> super::anim::Transition {
+        use super::anim::{Transition, Duration, Easing};
+        
+        let mut trans = Transition::default();
+        
+        // First token could be property name or duration
+        if self.matches(&[TokenType::Ident]) {
+            if let Some(tok) = self.current() {
+                if let TokenValue::Str(s) = &tok.value {
+                    // Check if it's an easing function or a property name
+                    if !EASING_FUNCS.contains(s.as_str()) {
+                        trans.property = s.clone();
+                        self.advance();
+                    }
+                }
+            }
+        }
+        
+        // Parse remaining properties
+        while let Some(tok) = self.current() {
+            if self.matches(&[TokenType::Newline, TokenType::Eof, TokenType::Dedent]) { break; }
+            
+            match tok.ttype {
+                TokenType::Duration => {
+                    if let Some(t) = self.advance() {
+                        if let TokenValue::Num(ms) = t.value {
+                            trans.duration = Duration::ms(ms);
+                        }
+                    }
+                }
+                TokenType::Ident => {
+                    let val = match &tok.value {
+                        TokenValue::Str(s) => s.clone(),
+                        _ => { self.advance(); continue; }
+                    };
+                    self.advance();
+                    
+                    match val.as_str() {
+                        "linear" => trans.easing = Easing::Linear,
+                        "ease" => trans.easing = Easing::Ease,
+                        "ease-in" => trans.easing = Easing::EaseIn,
+                        "ease-out" => trans.easing = Easing::EaseOut,
+                        "ease-in-out" => trans.easing = Easing::EaseInOut,
+                        "delay" => {
+                            if self.matches(&[TokenType::Duration]) {
+                                if let Some(t) = self.advance() {
+                                    if let TokenValue::Num(ms) = t.value {
+                                        trans.delay = Duration::ms(ms);
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => { self.advance(); }
+            }
+        }
+        
+        trans
     }
 
     pub(crate) fn parse_points(&mut self) -> Vec<(f64, f64)> {

@@ -395,6 +395,7 @@ pub struct AstShape {
     pub shadow: Option<ShadowDef>,
     pub gradient: Option<GradientDef>,
     pub transform: AstTransform,
+    pub animation: Option<super::anim::AnimationState>,
     pub children: Vec<AstShape>,
 }
 
@@ -407,6 +408,7 @@ impl AstShape {
             shadow: None,
             gradient: None,
             transform: AstTransform::default(),
+            animation: None,
             children: Vec::new(),
         }
     }
@@ -462,6 +464,9 @@ impl AstShape {
 
     #[getter]
     fn get_transform(&self) -> AstTransform { self.transform.clone() }
+
+    #[getter]
+    fn get_animation(&self) -> bool { self.animation.is_some() }
 
     #[getter]
     fn get_children(&self) -> Vec<AstShape> { self.children.clone() }
@@ -532,6 +537,7 @@ pub enum AstNode {
     Symbol(AstSymbol),
     Use(AstUse),
     Variable { name: String, value: Option<TokenValue> },
+    Keyframes(super::anim::Keyframes),
 }
 
 /// Error severity levels

@@ -101,8 +101,122 @@ export interface Shape {
   props: Record<string, unknown>;
   style: Style;
   transform: Transform;
+  animation?: AnimationState;
   children: Shape[];
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Animation Types
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Easing/timing function for animations */
+export type Easing = 
+  | 'linear' | 'ease' | 'ease-in' | 'ease-out' | 'ease-in-out'
+  | { cubicBezier: [number, number, number, number] }
+  | { steps: [number, 'start' | 'end' | 'both' | 'none'] };
+
+/** Animation playback direction */
+export type AnimationDirection = 'normal' | 'reverse' | 'alternate' | 'alternate-reverse';
+
+/** Animation fill mode */
+export type AnimationFillMode = 'none' | 'forwards' | 'backwards' | 'both';
+
+/** Animation iteration count */
+export type AnimationIteration = number | 'infinite';
+
+/** Duration in milliseconds */
+export type Duration = number;
+
+/** Animatable CSS properties */
+export interface AnimatableProperty {
+  opacity?: number;
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
+  transform?: string;
+  translate?: [number, number];
+  rotate?: number;
+  scale?: [number, number];
+  d?: string; // SVG path
+}
+
+/** Single keyframe step */
+export interface KeyframeStep {
+  offset: number; // 0-100%
+  properties: AnimatableProperty;
+}
+
+/** Keyframes animation definition */
+export interface Keyframes {
+  name: string;
+  steps: KeyframeStep[];
+}
+
+/** Animation reference applied to an element */
+export interface Animation {
+  name: string;
+  duration: Duration;
+  easing: Easing;
+  delay: Duration;
+  iteration: AnimationIteration;
+  direction: AnimationDirection;
+  fillMode: AnimationFillMode;
+}
+
+/** CSS transition definition */
+export interface Transition {
+  property: string;
+  duration: Duration;
+  easing: Easing;
+  delay: Duration;
+}
+
+/** Animation state attached to a shape */
+export interface AnimationState {
+  animation?: Animation;
+  transitions: Transition[];
+}
+
+/** Helper to create animation with defaults */
+export const createAnimation = (
+  name: string,
+  duration: Duration = 300,
+  easing: Easing = 'ease'
+): Animation => ({
+  name,
+  duration,
+  easing,
+  delay: 0,
+  iteration: 1,
+  direction: 'normal',
+  fillMode: 'none',
+});
+
+/** Helper to create transition with defaults */
+export const createTransition = (
+  property = 'all',
+  duration: Duration = 300,
+  easing: Easing = 'ease'
+): Transition => ({
+  property,
+  duration,
+  easing,
+  delay: 0,
+});
+
+/** Convert animation to CSS string */
+export const animationToCSS = (anim: Animation): string =>
+  `${anim.name} ${anim.duration}ms ${typeof anim.easing === 'string' ? anim.easing : 
+    'cubicBezier' in anim.easing ? `cubic-bezier(${anim.easing.cubicBezier.join(',')})` :
+    `steps(${anim.easing.steps[0]}, ${anim.easing.steps[1]})`
+  } ${anim.delay}ms ${anim.iteration === 'infinite' ? 'infinite' : anim.iteration} ${anim.direction} ${anim.fillMode}`;
+
+/** Convert transition to CSS string */
+export const transitionToCSS = (t: Transition): string =>
+  `${t.property} ${t.duration}ms ${typeof t.easing === 'string' ? t.easing :
+    'cubicBezier' in t.easing ? `cubic-bezier(${t.easing.cubicBezier.join(',')})` :
+    `steps(${t.easing.steps[0]}, ${t.easing.steps[1]})`
+  } ${t.delay}ms`;
 
 /** Node shapes for graphs/flowcharts */
 export type NodeShape = 'rect' | 'circle' | 'ellipse' | 'diamond';

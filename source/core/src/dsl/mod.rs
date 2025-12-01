@@ -8,6 +8,10 @@ pub use parser::{
     AstCanvas, AstGraph, AstNode, AstShape, AstStyle, AstTransform,
     ErrorKind, ErrorSeverity, FullStyle, GradientDef, GraphEdge, GraphNode,
     ParseError, Parser, PropValue, ShadowDef, Span,
+    // Animation primitives
+    Animation, AnimationState, AnimatableProperty, Direction, Duration,
+    Easing, FillMode, Interpolation, Iteration, Keyframes, KeyframeStep,
+    PlayState, StepPosition, Transition,
 };
 
 // Re-export WASM bindings

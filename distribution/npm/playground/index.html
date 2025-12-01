@@ -10,36 +10,108 @@
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-  <div class="panel editor-panel">
-    <div class="header">
-      <span class="logo">Iconoglott</span>
-      <div class="status-group">
-        <span class="error-count" id="errorCount">0 errors</span>
-        <div class="status" id="status"></div>
+  <!-- Showcase Section -->
+  <section class="showcase" id="showcase">
+    <div class="showcase-hero">
+      <h1 class="showcase-title">Iconoglott</h1>
+      <p class="showcase-tagline">A visual DSL for vector graphics</p>
+      <div class="showcase-demo" id="showcaseDemo"></div>
+    </div>
+    
+    <div class="showcase-examples">
+      <div class="example-card" data-example="shapes">
+        <div class="example-preview" id="exampleShapes"></div>
+        <span class="example-label">Shapes</span>
+      </div>
+      <div class="example-card" data-example="graphs">
+        <div class="example-preview" id="exampleGraphs"></div>
+        <span class="example-label">Graphs</span>
+      </div>
+      <div class="example-card" data-example="animations">
+        <div class="example-preview" id="exampleAnimations"></div>
+        <span class="example-label">Animations</span>
       </div>
     </div>
-    <div class="editor-container">
-      <div class="line-numbers" id="lineNumbers"></div>
-      <div class="code-area">
-        <div class="highlight-layer" id="highlight"></div>
-        <textarea id="editor" spellcheck="false"></textarea>
+    
+    <button class="features-btn" id="featuresBtn">
+      <span>Explore Features</span>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M8 3v10M3 8l5 5 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+  </section>
+
+  <!-- Features Section -->
+  <section class="features" id="features">
+    <h2 class="features-title">Features</h2>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">◈</div>
+        <h3>Declarative Syntax</h3>
+        <p>Define shapes with clean, readable DSL syntax</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⬡</div>
+        <h3>Graph Layouts</h3>
+        <p>Auto-layout nodes with hierarchical or force algorithms</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">◎</div>
+        <h3>Animations</h3>
+        <p>CSS keyframes and transitions built-in</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⧉</div>
+        <h3>Symbols</h3>
+        <p>Reusable components with symbol/use pattern</p>
       </div>
     </div>
-    <div class="error-panel" id="errorPanel"></div>
-    <div class="hint">
-      <span><code>canvas</code> <code>rect</code> <code>circle</code> <code>ellipse</code> <code>polygon</code> <code>path</code> <code>text</code> <code>arc</code> <code>curve</code></span>
-      <span><code>graph</code> <code>node</code> <code>edge</code> <code>stack</code> <code>row</code> <code>group</code></span>
-      <span><code>fill</code> <code>stroke</code> <code>gradient</code> <code>shadow</code> <code>corner</code> <code>opacity</code></span>
+    <button class="try-btn" id="tryBtn">
+      <span>Try the Editor</span>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+  </section>
+
+  <!-- Editor Section -->
+  <section class="editor-section" id="editorSection">
+    <div class="panel editor-panel">
+      <div class="header">
+        <button class="back-btn" id="backBtn">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M10 4L6 8l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <span class="logo">Iconoglott</span>
+        <div class="status-group">
+          <span class="error-count" id="errorCount">0 errors</span>
+          <div class="status" id="status"></div>
+        </div>
+      </div>
+      <div class="editor-container">
+        <div class="line-numbers" id="lineNumbers"></div>
+        <div class="code-area">
+          <div class="highlight-layer" id="highlight"></div>
+          <textarea id="editor" spellcheck="false"></textarea>
+        </div>
+      </div>
+      <div class="error-panel" id="errorPanel"></div>
+      <div class="hint">
+        <span><code>canvas</code> <code>rect</code> <code>circle</code> <code>ellipse</code> <code>polygon</code> <code>path</code> <code>text</code> <code>arc</code> <code>curve</code></span>
+        <span><code>graph</code> <code>node</code> <code>edge</code> <code>stack</code> <code>row</code> <code>group</code></span>
+        <span><code>fill</code> <code>stroke</code> <code>gradient</code> <code>shadow</code> <code>corner</code> <code>opacity</code></span>
+      </div>
     </div>
-  </div>
-  <div class="panel canvas-panel">
-    <div class="header preview-header">
-      <h2>Preview</h2>
+    <div class="panel canvas-panel">
+      <div class="header preview-header">
+        <h2>Preview</h2>
+      </div>
+      <div class="canvas-container">
+        <div id="canvas"></div>
+      </div>
     </div>
-    <div class="canvas-container">
-      <div id="canvas"></div>
-    </div>
-  </div>
+  </section>
   <script type="module" src="./main.ts"></script>
 </body>
 </html>

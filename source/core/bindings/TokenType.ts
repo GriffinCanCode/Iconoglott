@@ -3,4 +3,4 @@
 /**
  * Token types for lexical analysis
  */
-export type TokenType = "Ident" | "Number" | "Percent" | "String" | "Color" | "Var" | "Pair" | "PercentPair" | "Size" | "Colon" | "Equals" | "Arrow" | "LBracket" | "RBracket" | "Newline" | "Indent" | "Dedent" | "Eof";
+export type TokenType = "Ident" | "Number" | "Percent" | "String" | "Color" | "Var" | "Pair" | "PercentPair" | "Size" | "Colon" | "Equals" | "Arrow" | "LBracket" | "RBracket" | "Newline" | "Indent" | "Dedent" | "Eof" | "AtKeyframes" | "Duration";

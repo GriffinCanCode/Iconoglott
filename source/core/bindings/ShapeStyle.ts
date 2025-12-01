@@ -3,4 +3,8 @@
 /**
  * Style properties for shapes
  */
-export type ShapeStyle = { fill: string | null, stroke: string | null, stroke_width: number, opacity: number, corner: number, filter: string | null, };
+export type ShapeStyle = { fill: string | null, stroke: string | null, stroke_width: number, opacity: number, corner: number, filter: string | null, 
+/**
+ * Animation class name (references CSS animation)
+ */
+animation_class: string | null, };

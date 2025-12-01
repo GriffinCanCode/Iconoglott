@@ -221,6 +221,20 @@ impl Filter {
     }
 }
 
+/// CSS keyframes animation definition
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SceneKeyframes {
+    pub name: String,
+    pub css: String,
+}
+
+impl SceneKeyframes {
+    pub fn new(name: impl Into<String>, css: impl Into<String>) -> Self {
+        Self { name: name.into(), css: css.into() }
+    }
+}
+
 /// Scene container using standardized sizes
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "python", pyclass)]
@@ -231,11 +245,12 @@ pub struct Scene {
     gradients: Vec<Gradient>,
     filters: Vec<Filter>,
     symbols: Vec<Symbol>,
+    keyframes: Vec<SceneKeyframes>,
 }
 
 impl Default for Scene {
     fn default() -> Self {
-        Self { size: CanvasSize::Medium, background: "#fff".into(), elements: Vec::new(), gradients: Vec::new(), filters: Vec::new(), symbols: Vec::new() }
+        Self { size: CanvasSize::Medium, background: "#fff".into(), elements: Vec::new(), gradients: Vec::new(), filters: Vec::new(), symbols: Vec::new(), keyframes: Vec::new() }
     }
 }
 
@@ -245,7 +260,7 @@ impl Scene {
     #[new]
     #[pyo3(signature = (size=CanvasSize::Medium, background="#fff".to_string()))]
     fn py_new(size: CanvasSize, background: String) -> Self {
-        Self { size, background, elements: Vec::new(), gradients: Vec::new(), filters: Vec::new(), symbols: Vec::new() }
+        Self { size, background, elements: Vec::new(), gradients: Vec::new(), filters: Vec::new(), symbols: Vec::new(), keyframes: Vec::new() }
     }
     #[getter] fn get_size(&self) -> CanvasSize { self.size }
     #[setter] fn set_size(&mut self, v: CanvasSize) { self.size = v; }
@@ -273,7 +288,7 @@ impl Scene {
 
 impl Scene {
     pub fn new(size: CanvasSize, background: String) -> Self {
-        Self { size, background, elements: Vec::new(), gradients: Vec::new(), filters: Vec::new(), symbols: Vec::new() }
+        Self { size, background, elements: Vec::new(), gradients: Vec::new(), filters: Vec::new(), symbols: Vec::new(), keyframes: Vec::new() }
     }
     
     #[inline] pub fn width(&self) -> u32 { self.size.pixels() }
@@ -282,15 +297,37 @@ impl Scene {
     
     pub fn push(&mut self, el: Element) { self.elements.push(el); }
     pub fn push_symbol(&mut self, sym: Symbol) { self.symbols.push(sym); }
+    pub fn push_gradient(&mut self, g: Gradient) { self.gradients.push(g); }
+    pub fn push_filter(&mut self, f: Filter) { self.filters.push(f); }
+    
+    pub fn remove_gradient(&mut self, id: &str) { self.gradients.retain(|g| g.id != id); }
+    pub fn remove_filter(&mut self, id: &str) { self.filters.retain(|f| f.id != id); }
+    pub fn remove_symbol(&mut self, id: &str) { self.symbols.retain(|s| s.id != id); }
+    pub fn remove_keyframes(&mut self, name: &str) { self.keyframes.retain(|k| k.name != name); }
+    
+    pub fn push_keyframes(&mut self, kf: SceneKeyframes) { self.keyframes.push(kf); }
+    
     #[inline] pub fn elements(&self) -> &[Element] { &self.elements }
     #[inline] pub fn elements_mut(&mut self) -> &mut Vec<Element> { &mut self.elements }
     #[inline] pub fn gradients(&self) -> &[Gradient] { &self.gradients }
     #[inline] pub fn filters(&self) -> &[Filter] { &self.filters }
     #[inline] pub fn symbols(&self) -> &[Symbol] { &self.symbols }
+    #[inline] pub fn keyframes(&self) -> &[SceneKeyframes] { &self.keyframes }
 
     pub fn render_svg(&self) -> String {
         let (w, h) = self.dimensions();
         let mut svg = format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}">"#, w, h);
+        
+        // Include CSS animations as inline style block
+        if !self.keyframes.is_empty() {
+            svg.push_str("<style>");
+            for kf in &self.keyframes {
+                svg.push_str(&kf.css);
+                svg.push(' ');
+            }
+            svg.push_str("</style>");
+        }
+        
         svg.push_str(&format!(r#"<rect width="100%" height="100%" fill="{}"/>"#, self.background));
         
         // Check if we need arrow markers (for edges/graphs)
@@ -324,6 +361,7 @@ impl Scene {
             "gradients": self.gradients,
             "filters": self.filters,
             "symbols": self.symbols,
+            "keyframes": self.keyframes,
         }).to_string()
     }
     

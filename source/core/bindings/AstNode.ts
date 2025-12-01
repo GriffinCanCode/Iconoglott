@@ -2,9 +2,12 @@
 import type { AstCanvas } from "./AstCanvas";
 import type { AstGraph } from "./AstGraph";
 import type { AstShape } from "./AstShape";
+import type { AstSymbol } from "./AstSymbol";
+import type { AstUse } from "./AstUse";
+import type { Keyframes } from "./Keyframes";
 import type { TokenValue } from "./TokenValue";
 
 /**
  * AST node types
  */
-export type AstNode = { "Scene": Array<AstNode> } | { "Canvas": AstCanvas } | { "Shape": AstShape } | { "Graph": AstGraph } | { "Variable": { name: string, value: TokenValue | null, } };
+export type AstNode = { "Scene": Array<AstNode> } | { "Canvas": AstCanvas } | { "Shape": AstShape } | { "Graph": AstGraph } | { "Symbol": AstSymbol } | { "Use": AstUse } | { "Variable": { name: string, value: TokenValue | null, } } | { "Keyframes": Keyframes };

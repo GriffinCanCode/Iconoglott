@@ -36,6 +36,9 @@ pub enum TokenType {
     Indent,
     Dedent,
     Eof,
+    // Animation tokens
+    AtKeyframes, // @keyframes
+    Duration,    // 500ms, 1s, 2.5s
 }
 
 /// Standard canvas sizes (10-tier system)
@@ -206,6 +209,8 @@ lazy_static! {
     /// Cached lexer patterns - built once, reused across all Lexer instances
     static ref PATTERNS: Vec<Pattern> = vec![
         Pattern { regex: Regex::new(r"^//[^\n]*").unwrap(), ttype: None }, // Comments
+        // Animation: @keyframes directive
+        Pattern { regex: Regex::new(r"^@keyframes\b").unwrap(), ttype: Some(TokenType::AtKeyframes) },
         Pattern { regex: Regex::new(r"^\$[a-zA-Z_][a-zA-Z0-9_]*").unwrap(), ttype: Some(TokenType::Var) },
         Pattern { regex: Regex::new(r"^#[0-9a-fA-F]{3,8}\b").unwrap(), ttype: Some(TokenType::Color) },
         // Percent pairs must come before regular pairs (50%,50% or 50%x50%)
@@ -215,6 +220,8 @@ lazy_static! {
         Pattern { regex: Regex::new(r"^-?\d+\.?\d*%").unwrap(), ttype: Some(TokenType::Percent) },
         Pattern { regex: Regex::new(r#"^"[^"]*""#).unwrap(), ttype: Some(TokenType::String) },
         Pattern { regex: Regex::new(r"^'[^']*'").unwrap(), ttype: Some(TokenType::String) },
+        // Duration values (500ms, 1s, 2.5s) - must come before plain numbers
+        Pattern { regex: Regex::new(r"^-?\d+\.?\d*(ms|s)\b").unwrap(), ttype: Some(TokenType::Duration) },
         Pattern { regex: Regex::new(r"^-?\d+\.?\d*").unwrap(), ttype: Some(TokenType::Number) },
         Pattern { regex: Regex::new(r"^\[").unwrap(), ttype: Some(TokenType::LBracket) },
         Pattern { regex: Regex::new(r"^\]").unwrap(), ttype: Some(TokenType::RBracket) },
@@ -341,6 +348,18 @@ impl Lexer {
                 // Strip % and parse as number (stored as 0-100)
                 let num = raw.trim_end_matches('%');
                 TokenValue::Num(num.parse().unwrap_or(0.0))
+            }
+            TokenType::Duration => {
+                // Parse duration: 500ms -> 500.0, 1s -> 1000.0, 2.5s -> 2500.0
+                if raw.ends_with("ms") {
+                    let num = raw.trim_end_matches("ms");
+                    TokenValue::Num(num.parse().unwrap_or(0.0))
+                } else if raw.ends_with('s') {
+                    let num = raw.trim_end_matches('s');
+                    TokenValue::Num(num.parse::<f64>().unwrap_or(0.0) * 1000.0)
+                } else {
+                    TokenValue::Num(0.0)
+                }
             }
             TokenType::String => {
                 TokenValue::Str(raw[1..raw.len() - 1].to_string()) // Strip quotes
@@ -478,6 +497,35 @@ mod tests {
         let tokens = lexer.tokenize();
         assert!(tokens.iter().any(|t| t.ttype == TokenType::LBracket));
         assert!(tokens.iter().any(|t| t.ttype == TokenType::RBracket));
+    }
+
+    #[test]
+    fn test_lexer_at_keyframes() {
+        let mut lexer = Lexer::new("@keyframes fade-in");
+        let tokens = lexer.tokenize();
+        assert!(tokens.iter().any(|t| t.ttype == TokenType::AtKeyframes));
+        assert!(tokens.iter().any(|t| matches!(&t.value, TokenValue::Str(s) if s == "fade-in")));
+    }
+
+    #[test]
+    fn test_lexer_duration_ms() {
+        let mut lexer = Lexer::new("animate 500ms");
+        let tokens = lexer.tokenize();
+        assert!(tokens.iter().any(|t| t.ttype == TokenType::Duration && matches!(&t.value, TokenValue::Num(n) if (*n - 500.0).abs() < 0.001)));
+    }
+
+    #[test]
+    fn test_lexer_duration_seconds() {
+        let mut lexer = Lexer::new("transition 2s");
+        let tokens = lexer.tokenize();
+        assert!(tokens.iter().any(|t| t.ttype == TokenType::Duration && matches!(&t.value, TokenValue::Num(n) if (*n - 2000.0).abs() < 0.001)));
+    }
+
+    #[test]
+    fn test_lexer_duration_fractional() {
+        let mut lexer = Lexer::new("delay 0.5s");
+        let tokens = lexer.tokenize();
+        assert!(tokens.iter().any(|t| t.ttype == TokenType::Duration && matches!(&t.value, TokenValue::Num(n) if (*n - 500.0).abs() < 0.001)));
     }
 }
 

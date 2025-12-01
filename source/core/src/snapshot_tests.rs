@@ -79,7 +79,7 @@ fn snapshot_basic_text() {
     let mut scene = Scene::new(CanvasSize::Medium, "#fff".into());
     scene.push(Element::Text(Text {
         x: 32.0, y: 32.0, content: "Hello".into(),
-        font: Some("sans-serif".into()), size: 14.0, weight: "normal".into(), anchor: "start".into(),
+        font: "sans-serif".into(), size: 14.0, weight: "normal".into(), anchor: "start".into(),
         style: Style::with_fill("#333"), transform: None,
     }));
     assert_snapshot!("basic_text", scene.render_svg());
@@ -283,7 +283,7 @@ fn snapshot_text_bold() {
     let mut scene = Scene::new(CanvasSize::Medium, "#fff".into());
     scene.push(Element::Text(Text {
         x: 32.0, y: 32.0, content: "Bold".into(),
-        font: Some("sans-serif".into()), size: 16.0, weight: "bold".into(), anchor: "middle".into(),
+        font: "sans-serif".into(), size: 16.0, weight: "bold".into(), anchor: "middle".into(),
         style: Style::with_fill("#1f2937"), transform: None,
     }));
     assert_snapshot!("text_bold", scene.render_svg());
@@ -294,17 +294,17 @@ fn snapshot_text_anchors() {
     let mut scene = Scene::new(CanvasSize::Large, "#fff".into());
     scene.push(Element::Text(Text {
         x: 8.0, y: 24.0, content: "Start".into(),
-        font: Some("sans-serif".into()), size: 12.0, weight: "normal".into(), anchor: "start".into(),
+        font: "sans-serif".into(), size: 12.0, weight: "normal".into(), anchor: "start".into(),
         style: Style::with_fill("#333"), transform: None,
     }));
     scene.push(Element::Text(Text {
         x: 48.0, y: 48.0, content: "Center".into(),
-        font: Some("sans-serif".into()), size: 12.0, weight: "normal".into(), anchor: "middle".into(),
+        font: "sans-serif".into(), size: 12.0, weight: "normal".into(), anchor: "middle".into(),
         style: Style::with_fill("#333"), transform: None,
     }));
     scene.push(Element::Text(Text {
         x: 88.0, y: 72.0, content: "End".into(),
-        font: Some("sans-serif".into()), size: 12.0, weight: "normal".into(), anchor: "end".into(),
+        font: "sans-serif".into(), size: 12.0, weight: "normal".into(), anchor: "end".into(),
         style: Style::with_fill("#333"), transform: None,
     }));
     assert_snapshot!("text_anchors", scene.render_svg());
@@ -379,6 +379,7 @@ fn snapshot_path() {
             ..Default::default()
         },
         transform: None,
+        bounds_hint: None,
     }));
     assert_snapshot!("path", scene.render_svg());
 }
