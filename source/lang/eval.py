@@ -1,6 +1,5 @@
 """Interpreter for the visual DSL using Rust core for lexing, parsing, and rendering."""
 
-import json
 import logging
 from dataclasses import dataclass, field
 from .types import Node, Canvas, Shape, Style, Transform
@@ -88,6 +87,7 @@ class SceneState:
         props = s['props']
         style = s['style']
         children = s.get('children', [])
+        transform = self._make_transform(s.get('transform', {}))
         
         x, y = props.get('at', (0, 0))
         x, y = float(x + offset[0]), float(y + offset[1])
@@ -98,10 +98,10 @@ class SceneState:
             case 'rect':
                 w, h = props.get('size', (100, 100))
                 corner = float(style.get('corner', 0))
-                scene.add_rect(rust.Rect(x, y, float(w), float(h), corner, rust_style))
+                scene.add_rect(rust.Rect(x, y, float(w), float(h), corner, rust_style, transform))
             case 'circle':
                 r = float(props.get('radius', 50))
-                scene.add_circle(rust.Circle(x, y, r, rust_style))
+                scene.add_circle(rust.Circle(x, y, r, rust_style, transform))
             case 'ellipse':
                 if 'radius' in props:
                     r = props['radius']
@@ -110,28 +110,28 @@ class SceneState:
                     rx, ry = float(props['size'][0]), float(props['size'][1])
                 else:
                     rx, ry = 50.0, 30.0
-                scene.add_ellipse(rust.Ellipse(x, y, rx, ry, rust_style))
+                scene.add_ellipse(rust.Ellipse(x, y, rx, ry, rust_style, transform))
             case 'line':
                 x1, y1 = props.get('from', (0, 0))
                 x2, y2 = props.get('to', (100, 100))
-                scene.add_line(rust.Line(float(x1), float(y1), float(x2), float(y2), rust_style))
+                scene.add_line(rust.Line(float(x1), float(y1), float(x2), float(y2), rust_style, transform))
             case 'path':
                 d = props.get('d', props.get('content', ''))
-                scene.add_path(rust.Path(str(d), rust_style))
+                scene.add_path(rust.Path(str(d), rust_style, transform))
             case 'polygon':
                 points = [(float(px), float(py)) for px, py in props.get('points', [])]
-                scene.add_polygon(rust.Polygon(points, rust_style))
+                scene.add_polygon(rust.Polygon(points, rust_style, transform))
             case 'text':
                 content = str(props.get('content', ''))
                 font = str(style.get('font') or 'system-ui')
                 size = float(style.get('font_size', 16))
                 weight = str(style.get('font_weight', 'normal'))
                 anchor = str(style.get('text_anchor', 'start'))
-                scene.add_text(rust.Text(x, y, content, font, size, weight, anchor, rust_style))
+                scene.add_text(rust.Text(x, y, content, font, size, weight, anchor, rust_style, transform))
             case 'image':
                 w, h = props.get('size', (100, 100))
                 href = str(props.get('href', ''))
-                scene.add_image(rust.Image(x, y, float(w), float(h), href))
+                scene.add_image(rust.Image(x, y, float(w), float(h), href, transform))
             case 'group':
                 for c in children:
                     self._add_shape(scene, c, (0, 0))
@@ -161,6 +161,25 @@ class SceneState:
             opacity=float(style.get('opacity', 1.0)),
             corner=float(style.get('corner', 0.0))
         )
+
+    def _make_transform(self, transform: dict) -> str | None:
+        """Convert transform dict to SVG transform string."""
+        if not transform:
+            return None
+        parts = []
+        if translate := transform.get('translate'):
+            tx, ty = (translate, 0) if isinstance(translate, (int, float)) else translate
+            parts.append(f"translate({tx} {ty})")
+        if (rotate := transform.get('rotate')) and rotate != 0:
+            if origin := transform.get('origin'):
+                ox, oy = origin
+                parts.append(f"rotate({rotate} {ox} {oy})")
+            else:
+                parts.append(f"rotate({rotate})")
+        if scale := transform.get('scale'):
+            sx, sy = (scale, scale) if isinstance(scale, (int, float)) else scale
+            parts.append(f"scale({sx} {sy})")
+        return ' '.join(parts) if parts else None
 
     def _add_layout(self, scene, props: dict, children: list):
         """Add layout children with proper positioning."""
@@ -230,9 +249,9 @@ class Interpreter:
         lexer = rust.Lexer(source)
         tokens = lexer.py_tokenize()
         
-        # Parse with Rust parser
+        # Parse with Rust parser - returns native Python objects directly
         parser = rust.Parser(tokens)
-        ast_json = parser.parse_json()
+        ast = parser.parse_py()
         
         # Collect parse errors
         for err in parser.get_errors():
@@ -243,13 +262,9 @@ class Interpreter:
                 err.col
             )
         
-        # Convert JSON AST to Python structures and evaluate
+        # Evaluate the AST
         try:
-            ast = json.loads(ast_json)
             self._eval_ast(ast)
-        except json.JSONDecodeError as e:
-            logger.exception("Failed to parse AST JSON")
-            self.state.add_error(ErrorCode.PARSE_RECOVERY, f"AST parse error: {e}")
         except Exception as e:
             logger.exception("Evaluation failed")
             self.state.add_error(ErrorCode.EVAL_INVALID_SHAPE, f"Evaluation error: {e}")
@@ -273,32 +288,12 @@ class Interpreter:
         """Add shape to scene state."""
         self.state.shapes.append(self._shape_to_dict(shape))
 
-    def _unwrap_prop(self, val):
-        """Unwrap Rust PropValue enum format to plain Python values."""
-        if val is None:
-            return None
-        if isinstance(val, dict):
-            if 'Pair' in val:
-                return tuple(val['Pair'])
-            if 'Num' in val:
-                return val['Num']
-            if 'Str' in val:
-                return val['Str']
-            if 'Points' in val:
-                return [tuple(p) for p in val['Points']]
-            if 'None' in val:
-                return None
-        return val
-
-    def _unwrap_props(self, props: dict) -> dict:
-        """Unwrap all props from Rust PropValue format."""
-        return {k: self._unwrap_prop(v) for k, v in props.items()}
 
     def _shape_to_dict(self, shape: dict) -> dict:
         """Convert Rust AST Shape to dict for rendering."""
         style = shape.get('style', {})
         transform = shape.get('transform', {})
-        props = self._unwrap_props(shape.get('props', {}))
+        props = shape.get('props', {})
         
         # Get fill from style or props
         fill = style.get('fill')
