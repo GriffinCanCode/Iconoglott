@@ -52,7 +52,7 @@ impl Color {
 }
 
 /// Style properties for shapes
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[pyclass]
 pub struct Style {
     #[pyo3(get, set)]
@@ -65,20 +65,22 @@ pub struct Style {
     pub opacity: f32,
     #[pyo3(get, set)]
     pub corner: f32,
+    #[pyo3(get, set)]
+    pub filter: Option<String>,
 }
 
 #[pymethods]
 impl Style {
     #[new]
-    #[pyo3(signature = (fill=None, stroke=None, stroke_width=1.0, opacity=1.0, corner=0.0))]
-    fn new(fill: Option<String>, stroke: Option<String>, stroke_width: f32, opacity: f32, corner: f32) -> Self {
-        Self { fill, stroke, stroke_width, opacity, corner }
+    #[pyo3(signature = (fill=None, stroke=None, stroke_width=1.0, opacity=1.0, corner=0.0, filter=None))]
+    fn new(fill: Option<String>, stroke: Option<String>, stroke_width: f32, opacity: f32, corner: f32, filter: Option<String>) -> Self {
+        Self { fill, stroke, stroke_width, opacity, corner, filter }
     }
 }
 
 impl Style {
     pub fn to_svg_attrs(&self) -> String {
-        let mut attrs = Vec::new();
+        let mut attrs = Vec::with_capacity(4);
         if let Some(ref fill) = self.fill {
             attrs.push(format!(r#"fill="{}""#, fill));
         }
@@ -88,12 +90,15 @@ impl Style {
         if self.opacity < 1.0 {
             attrs.push(format!(r#"opacity="{}""#, self.opacity));
         }
+        if let Some(ref filter) = self.filter {
+            attrs.push(format!(r#"filter="url(#{})""#, filter));
+        }
         if attrs.is_empty() { String::new() } else { format!(" {}", attrs.join(" ")) }
     }
 }
 
 /// Rectangle primitive
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[pyclass]
 pub struct Rect {
     #[pyo3(get, set)]
@@ -108,22 +113,24 @@ pub struct Rect {
     pub rx: f32,
     #[pyo3(get, set)]
     pub style: Style,
+    #[pyo3(get, set)]
+    pub transform: Option<String>,
 }
 
 #[pymethods]
 impl Rect {
     #[new]
-    #[pyo3(signature = (x, y, w, h, rx=0.0, style=None))]
-    fn new(x: f32, y: f32, w: f32, h: f32, rx: f32, style: Option<Style>) -> Self {
-        Self { x, y, w, h, rx, style: style.unwrap_or_default() }
+    #[pyo3(signature = (x, y, w, h, rx=0.0, style=None, transform=None))]
+    fn new(x: f32, y: f32, w: f32, h: f32, rx: f32, style: Option<Style>, transform: Option<String>) -> Self {
+        Self { x, y, w, h, rx, style: style.unwrap_or_default(), transform }
     }
 }
 
 impl Rect {
     pub fn to_svg(&self) -> String {
         let rx = if self.rx > 0.0 { format!(r#" rx="{}""#, self.rx) } else { String::new() };
-        format!(r#"<rect x="{}" y="{}" width="{}" height="{}"{}{}/>"#,
-            self.x, self.y, self.w, self.h, rx, self.style.to_svg_attrs())
+        format!(r#"<rect x="{}" y="{}" width="{}" height="{}"{}{}{}/>"#,
+            self.x, self.y, self.w, self.h, rx, self.style.to_svg_attrs(), transform_attr(&self.transform))
     }
 
     pub fn bounds(&self) -> (f32, f32, f32, f32) {
@@ -132,7 +139,7 @@ impl Rect {
 }
 
 /// Circle primitive
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[pyclass]
 pub struct Circle {
     #[pyo3(get, set)]
@@ -143,20 +150,22 @@ pub struct Circle {
     pub r: f32,
     #[pyo3(get, set)]
     pub style: Style,
+    #[pyo3(get, set)]
+    pub transform: Option<String>,
 }
 
 #[pymethods]
 impl Circle {
     #[new]
-    #[pyo3(signature = (cx, cy, r, style=None))]
-    fn new(cx: f32, cy: f32, r: f32, style: Option<Style>) -> Self {
-        Self { cx, cy, r, style: style.unwrap_or_default() }
+    #[pyo3(signature = (cx, cy, r, style=None, transform=None))]
+    fn new(cx: f32, cy: f32, r: f32, style: Option<Style>, transform: Option<String>) -> Self {
+        Self { cx, cy, r, style: style.unwrap_or_default(), transform }
     }
 }
 
 impl Circle {
     pub fn to_svg(&self) -> String {
-        format!(r#"<circle cx="{}" cy="{}" r="{}"{}/>"#, self.cx, self.cy, self.r, self.style.to_svg_attrs())
+        format!(r#"<circle cx="{}" cy="{}" r="{}"{}{}/>"#, self.cx, self.cy, self.r, self.style.to_svg_attrs(), transform_attr(&self.transform))
     }
 
     pub fn bounds(&self) -> (f32, f32, f32, f32) {
@@ -165,7 +174,7 @@ impl Circle {
 }
 
 /// Ellipse primitive
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[pyclass]
 pub struct Ellipse {
     #[pyo3(get, set)]
@@ -178,21 +187,23 @@ pub struct Ellipse {
     pub ry: f32,
     #[pyo3(get, set)]
     pub style: Style,
+    #[pyo3(get, set)]
+    pub transform: Option<String>,
 }
 
 #[pymethods]
 impl Ellipse {
     #[new]
-    #[pyo3(signature = (cx, cy, rx, ry, style=None))]
-    fn new(cx: f32, cy: f32, rx: f32, ry: f32, style: Option<Style>) -> Self {
-        Self { cx, cy, rx, ry, style: style.unwrap_or_default() }
+    #[pyo3(signature = (cx, cy, rx, ry, style=None, transform=None))]
+    fn new(cx: f32, cy: f32, rx: f32, ry: f32, style: Option<Style>, transform: Option<String>) -> Self {
+        Self { cx, cy, rx, ry, style: style.unwrap_or_default(), transform }
     }
 }
 
 impl Ellipse {
     pub fn to_svg(&self) -> String {
-        format!(r#"<ellipse cx="{}" cy="{}" rx="{}" ry="{}"{}/>"#,
-            self.cx, self.cy, self.rx, self.ry, self.style.to_svg_attrs())
+        format!(r#"<ellipse cx="{}" cy="{}" rx="{}" ry="{}"{}{}/>"#,
+            self.cx, self.cy, self.rx, self.ry, self.style.to_svg_attrs(), transform_attr(&self.transform))
     }
 
     pub fn bounds(&self) -> (f32, f32, f32, f32) {
@@ -201,7 +212,7 @@ impl Ellipse {
 }
 
 /// Line primitive
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[pyclass]
 pub struct Line {
     #[pyo3(get, set)]
@@ -214,24 +225,26 @@ pub struct Line {
     pub y2: f32,
     #[pyo3(get, set)]
     pub style: Style,
+    #[pyo3(get, set)]
+    pub transform: Option<String>,
 }
 
 #[pymethods]
 impl Line {
     #[new]
-    #[pyo3(signature = (x1, y1, x2, y2, style=None))]
-    fn new(x1: f32, y1: f32, x2: f32, y2: f32, style: Option<Style>) -> Self {
+    #[pyo3(signature = (x1, y1, x2, y2, style=None, transform=None))]
+    fn new(x1: f32, y1: f32, x2: f32, y2: f32, style: Option<Style>, transform: Option<String>) -> Self {
         let mut style = style.unwrap_or_default();
         if style.stroke.is_none() { style.stroke = Some("#000".into()); }
-        Self { x1, y1, x2, y2, style }
+        Self { x1, y1, x2, y2, style, transform }
     }
 }
 
 impl Line {
     pub fn to_svg(&self) -> String {
         let stroke = self.style.stroke.as_deref().unwrap_or("#000");
-        format!(r#"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="{}"/>"#,
-            self.x1, self.y1, self.x2, self.y2, stroke, self.style.stroke_width)
+        format!(r#"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="{}"{}/>"#,
+            self.x1, self.y1, self.x2, self.y2, stroke, self.style.stroke_width, transform_attr(&self.transform))
     }
 
     pub fn bounds(&self) -> (f32, f32, f32, f32) {
@@ -242,7 +255,7 @@ impl Line {
 }
 
 /// Path primitive
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[pyclass]
 pub struct Path {
     #[pyo3(get, set)]
@@ -267,28 +280,30 @@ impl Path {
 }
 
 /// Polygon primitive
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[pyclass]
 pub struct Polygon {
     #[pyo3(get, set)]
     pub points: Vec<(f32, f32)>,
     #[pyo3(get, set)]
     pub style: Style,
+    #[pyo3(get, set)]
+    pub transform: Option<String>,
 }
 
 #[pymethods]
 impl Polygon {
     #[new]
-    #[pyo3(signature = (points, style=None))]
-    fn new(points: Vec<(f32, f32)>, style: Option<Style>) -> Self {
-        Self { points, style: style.unwrap_or_default() }
+    #[pyo3(signature = (points, style=None, transform=None))]
+    fn new(points: Vec<(f32, f32)>, style: Option<Style>, transform: Option<String>) -> Self {
+        Self { points, style: style.unwrap_or_default(), transform }
     }
 }
 
 impl Polygon {
     pub fn to_svg(&self) -> String {
         let pts: String = self.points.iter().map(|(x, y)| format!("{},{}", x, y)).collect::<Vec<_>>().join(" ");
-        format!(r#"<polygon points="{}"{}/>"#, pts, self.style.to_svg_attrs())
+        format!(r#"<polygon points="{}"{}{}/>"#, pts, self.style.to_svg_attrs(), transform_attr(&self.transform))
     }
 
     pub fn bounds(&self) -> (f32, f32, f32, f32) {
@@ -304,7 +319,7 @@ impl Polygon {
 }
 
 /// Text primitive
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[pyclass]
 pub struct Text {
     #[pyo3(get, set)]
@@ -323,14 +338,16 @@ pub struct Text {
     pub anchor: String,
     #[pyo3(get, set)]
     pub style: Style,
+    #[pyo3(get, set)]
+    pub transform: Option<String>,
 }
 
 #[pymethods]
 impl Text {
     #[new]
-    #[pyo3(signature = (x, y, content, font="system-ui".to_string(), size=16.0, weight="normal".to_string(), anchor="start".to_string(), style=None))]
-    fn new(x: f32, y: f32, content: String, font: String, size: f32, weight: String, anchor: String, style: Option<Style>) -> Self {
-        Self { x, y, content, font, size, weight, anchor, style: style.unwrap_or_default() }
+    #[pyo3(signature = (x, y, content, font="system-ui".to_string(), size=16.0, weight="normal".to_string(), anchor="start".to_string(), style=None, transform=None))]
+    fn new(x: f32, y: f32, content: String, font: String, size: f32, weight: String, anchor: String, style: Option<Style>, transform: Option<String>) -> Self {
+        Self { x, y, content, font, size, weight, anchor, style: style.unwrap_or_default(), transform }
     }
 }
 
@@ -338,9 +355,9 @@ impl Text {
     pub fn to_svg(&self) -> String {
         let fill = self.style.fill.as_deref().unwrap_or("#000");
         format!(
-            r#"<text x="{}" y="{}" font-family="{}" font-size="{}" font-weight="{}" text-anchor="{}" fill="{}">{}</text>"#,
+            r#"<text x="{}" y="{}" font-family="{}" font-size="{}" font-weight="{}" text-anchor="{}" fill="{}"{}>{}</text>"#,
             self.x, self.y, self.font, self.size, self.weight, self.anchor, fill, 
-            html_escape(&self.content)
+            transform_attr(&self.transform), html_escape(&self.content)
         )
     }
 
@@ -352,7 +369,7 @@ impl Text {
 }
 
 /// Image primitive
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[pyclass]
 pub struct Image {
     #[pyo3(get, set)]
@@ -365,21 +382,23 @@ pub struct Image {
     pub h: f32,
     #[pyo3(get, set)]
     pub href: String,
+    #[pyo3(get, set)]
+    pub transform: Option<String>,
 }
 
 #[pymethods]
 impl Image {
     #[new]
-    #[pyo3(signature = (x, y, w, h, href))]
-    fn new(x: f32, y: f32, w: f32, h: f32, href: String) -> Self {
-        Self { x, y, w, h, href }
+    #[pyo3(signature = (x, y, w, h, href, transform=None))]
+    fn new(x: f32, y: f32, w: f32, h: f32, href: String, transform: Option<String>) -> Self {
+        Self { x, y, w, h, href, transform }
     }
 }
 
 impl Image {
     pub fn to_svg(&self) -> String {
-        format!(r#"<image x="{}" y="{}" width="{}" height="{}" href="{}"/>"#,
-            self.x, self.y, self.w, self.h, html_escape(&self.href))
+        format!(r#"<image x="{}" y="{}" width="{}" height="{}" href="{}"{}/>"#,
+            self.x, self.y, self.w, self.h, html_escape(&self.href), transform_attr(&self.transform))
     }
 
     pub fn bounds(&self) -> (f32, f32, f32, f32) {
@@ -389,4 +408,9 @@ impl Image {
 
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
+#[inline]
+fn transform_attr(tf: &Option<String>) -> String {
+    tf.as_ref().map_or(String::new(), |t| format!(r#" transform="{}""#, t))
 }
