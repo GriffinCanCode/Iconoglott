@@ -49,6 +49,8 @@ clean:
 	@rm -rf $(VENV) *.egg-info dist build source/core/target
 	@echo "Cleaned all"
 
-# Build distribution
+# Build distribution (includes builder for all targets)
 build: clean install
+	@echo "Running builder..."
+	@builder build
 	$(PYTHON) -m build

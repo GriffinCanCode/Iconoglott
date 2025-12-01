@@ -1,0 +1,31 @@
+// Builderfile - Iconoglott Project Build Configuration
+
+// Rust core library with PyO3 Python bindings
+target("core-rust") {
+    type: library;
+    language: rust;
+    sources: [
+        "./source/core/src/lib.rs",
+        "./source/core/src/scene.rs",
+        "./source/core/src/render.rs",
+        "./source/core/src/shape.rs",
+        "./source/core/src/diff.rs"
+    ];
+    
+    config: {
+        "mode": "cargo",
+        "profile": "release",
+        "manifest": "./source/core/Cargo.toml"
+    };
+}
+
+// Static JavaScript client
+target("static") {
+    type: library;
+    language: javascript;
+    sources: ["./source/static/client.js"];
+    
+    config: {
+        "mode": "execute"
+    };
+}
