@@ -2,311 +2,62 @@
 //!
 //! Parses token stream into AST with error collection and recovery.
 
-use super::lexer::{CanvasSize, Token, TokenType, TokenValue};
-use serde::{Deserialize, Serialize};
+use super::ast::*;
+use super::super::lexer::{CanvasSize, Token, TokenType, TokenValue};
 use std::collections::{HashMap, HashSet};
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AST Types
+// Parser Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Style properties for shapes
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass(get_all, set_all))]
-pub struct AstStyle {
-    pub fill: Option<String>,
-    pub stroke: Option<String>,
-    pub stroke_width: f64,
-    pub opacity: f64,
-    pub corner: f64,
-    pub font: Option<String>,
-    pub font_size: f64,
-    pub font_weight: String,
-    pub text_anchor: String,
-}
-
-/// Extended style with shadow/gradient (separate for Python compat)
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct FullStyle {
-    pub base: AstStyle,
-    pub shadow: Option<ShadowDef>,
-    pub gradient: Option<GradientDef>,
-}
-
-impl AstStyle {
-    pub fn new() -> Self {
-        Self {
-            stroke_width: 1.0,
-            opacity: 1.0,
-            font_size: 16.0,
-            font_weight: "normal".into(),
-            text_anchor: "start".into(),
-            ..Default::default()
-        }
-    }
-}
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl AstStyle {
-    #[new]
-    fn py_new() -> Self { Self::new() }
-}
-
-/// Shadow definition
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass(get_all, set_all))]
-pub struct ShadowDef {
-    pub x: f64,
-    pub y: f64,
-    pub blur: f64,
-    pub color: String,
-}
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl ShadowDef {
-    #[new]
-    #[pyo3(signature = (x=0.0, y=4.0, blur=8.0, color="#0004".to_string()))]
-    fn py_new(x: f64, y: f64, blur: f64, color: String) -> Self {
-        Self { x, y, blur, color }
-    }
-}
-
-/// Gradient definition
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass(get_all, set_all))]
-pub struct GradientDef {
-    pub gtype: String, // "linear" or "radial"
-    pub from: String,
-    pub to: String,
-    pub angle: f64,
-}
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl GradientDef {
-    #[new]
-    #[pyo3(signature = (gtype="linear".to_string(), from="#fff".to_string(), to="#000".to_string(), angle=90.0))]
-    fn py_new(gtype: String, from: String, to: String, angle: f64) -> Self {
-        Self { gtype, from, to, angle }
-    }
-}
-
-/// Transform properties
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass)]
-pub struct AstTransform {
-    pub translate: Option<(f64, f64)>,
-    pub rotate: f64,
-    pub scale: Option<(f64, f64)>,
-    pub origin: Option<(f64, f64)>,
-}
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl AstTransform {
-    #[new]
-    fn py_new() -> Self { Self::default() }
-
-    #[getter]
-    fn get_translate(&self) -> Option<(f64, f64)> { self.translate }
-    #[setter]
-    fn set_translate(&mut self, v: Option<(f64, f64)>) { self.translate = v; }
-
-    #[getter]
-    fn get_rotate(&self) -> f64 { self.rotate }
-    #[setter]
-    fn set_rotate(&mut self, v: f64) { self.rotate = v; }
-
-    #[getter]
-    fn get_scale(&self) -> Option<(f64, f64)> { self.scale }
-    #[setter]
-    fn set_scale(&mut self, v: Option<(f64, f64)>) { self.scale = v; }
-
-    #[getter]
-    fn get_origin(&self) -> Option<(f64, f64)> { self.origin }
-    #[setter]
-    fn set_origin(&mut self, v: Option<(f64, f64)>) { self.origin = v; }
-}
-
-/// Canvas definition using standardized sizes
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass(get_all, set_all))]
-pub struct AstCanvas {
-    pub size: CanvasSize,
-    pub fill: String,
-}
-
-impl AstCanvas {
-    pub fn width(&self) -> u32 { self.size.pixels() }
-    pub fn height(&self) -> u32 { self.size.pixels() }
-    pub fn dimensions(&self) -> (u32, u32) { self.size.dimensions() }
-}
-
-impl Default for AstCanvas {
-    fn default() -> Self {
-        Self { size: CanvasSize::Medium, fill: "#fff".into() }
-    }
-}
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl AstCanvas {
-    #[new]
-    #[pyo3(signature = (size=CanvasSize::Medium, fill="#fff".to_string()))]
-    fn py_new(size: CanvasSize, fill: String) -> Self {
-        Self { size, fill }
-    }
-    
-    #[getter]
-    fn get_width(&self) -> u32 { self.width() }
-    
-    #[getter]
-    fn get_height(&self) -> u32 { self.height() }
-}
-
-/// Property value types
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum PropValue {
-    None,
-    Str(String),
-    Num(f64),
-    Pair(f64, f64),
-    Points(Vec<(f64, f64)>),
-}
-
-impl Default for PropValue {
-    fn default() -> Self { Self::None }
-}
-
-/// Shape in the AST
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass)]
-pub struct AstShape {
-    pub kind: String,
-    pub props: HashMap<String, PropValue>,
-    pub style: AstStyle,
-    pub shadow: Option<ShadowDef>,
-    pub gradient: Option<GradientDef>,
-    pub transform: AstTransform,
-    pub children: Vec<AstShape>,
-}
-
-impl AstShape {
-    pub fn new(kind: &str) -> Self {
-        Self {
-            kind: kind.into(),
-            props: HashMap::new(),
-            style: AstStyle::new(),
-            shadow: None,
-            gradient: None,
-            transform: AstTransform::default(),
-            children: Vec::new(),
-        }
-    }
-}
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl AstShape {
-    #[new]
-    fn py_new(kind: &str) -> Self { Self::new(kind) }
-
-    #[getter]
-    fn get_kind(&self) -> String { self.kind.clone() }
-
-    #[getter]
-    fn get_props(&self, py: Python<'_>) -> PyObject {
-        use pyo3::types::PyDict;
-        let dict = PyDict::new(py);
-        for (k, v) in &self.props {
-            let val: PyObject = match v {
-                PropValue::None => py.None(),
-                PropValue::Str(s) => s.clone().into_py(py),
-                PropValue::Num(n) => n.into_py(py),
-                PropValue::Pair(a, b) => (*a, *b).into_py(py),
-                PropValue::Points(pts) => pts.clone().into_py(py),
-            };
-            dict.set_item(k, val).ok();
-        }
-        dict.into()
-    }
-
-    #[getter]
-    fn get_style(&self) -> AstStyle { self.style.clone() }
-
-    #[getter]
-    fn get_shadow(&self) -> Option<ShadowDef> { self.shadow.clone() }
-
-    #[getter]
-    fn get_gradient(&self) -> Option<GradientDef> { self.gradient.clone() }
-
-    #[getter]
-    fn get_transform(&self) -> AstTransform { self.transform.clone() }
-
-    #[getter]
-    fn get_children(&self) -> Vec<AstShape> { self.children.clone() }
-}
-
-/// AST node types
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum AstNode {
-    Scene(Vec<AstNode>),
-    Canvas(AstCanvas),
-    Shape(AstShape),
-    Variable { name: String, value: Option<TokenValue> },
-}
-
-/// Parse error
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass(get_all))]
-pub struct ParseError {
-    pub message: String,
-    pub line: usize,
-    pub col: usize,
-}
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl ParseError {
-    fn __repr__(&self) -> String {
-        format!("ParseError({:?}, {}:{})", self.message, self.line, self.col)
-    }
+lazy_static::lazy_static! {
+    pub(crate) static ref SHAPES: HashSet<&'static str> = {
+        ["rect", "circle", "ellipse", "line", "path", "polygon", "text", "image", "arc", "curve", "diamond"]
+            .into_iter().collect()
+    };
+    pub(crate) static ref STYLE_PROPS: HashSet<&'static str> = {
+        ["fill", "stroke", "opacity", "corner", "shadow", "gradient", "blur"]
+            .into_iter().collect()
+    };
+    pub(crate) static ref TEXT_PROPS: HashSet<&'static str> = {
+        ["font", "bold", "italic", "center", "middle", "end"]
+            .into_iter().collect()
+    };
+    pub(crate) static ref TRANSFORM_PROPS: HashSet<&'static str> = {
+        ["translate", "rotate", "scale", "origin"]
+            .into_iter().collect()
+    };
+    pub(crate) static ref NODE_SHAPES: HashSet<&'static str> = {
+        ["rect", "circle", "ellipse", "diamond"]
+            .into_iter().collect()
+    };
+    pub(crate) static ref EDGE_STYLES: HashSet<&'static str> = {
+        ["straight", "curved", "orthogonal"]
+            .into_iter().collect()
+    };
+    pub(crate) static ref ARROW_TYPES: HashSet<&'static str> = {
+        ["none", "forward", "backward", "both"]
+            .into_iter().collect()
+    };
+    pub(crate) static ref GRAPH_LAYOUTS: HashSet<&'static str> = {
+        ["hierarchical", "force", "grid", "tree", "manual"]
+            .into_iter().collect()
+    };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Parser
 // ─────────────────────────────────────────────────────────────────────────────
 
-lazy_static::lazy_static! {
-    static ref SHAPES: HashSet<&'static str> = {
-        ["rect", "circle", "ellipse", "line", "path", "polygon", "text", "image", "arc", "curve"]
-            .into_iter().collect()
-    };
-    static ref STYLE_PROPS: HashSet<&'static str> = {
-        ["fill", "stroke", "opacity", "corner", "shadow", "gradient", "blur"]
-            .into_iter().collect()
-    };
-    static ref TEXT_PROPS: HashSet<&'static str> = {
-        ["font", "bold", "italic", "center", "middle", "end"]
-            .into_iter().collect()
-    };
-    static ref TRANSFORM_PROPS: HashSet<&'static str> = {
-        ["translate", "rotate", "scale", "origin"]
-            .into_iter().collect()
-    };
-}
-
 /// Parser for the iconoglott DSL
 #[cfg_attr(feature = "python", pyclass)]
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
-    variables: HashMap<String, TokenValue>,
+    pub(crate) variables: HashMap<String, TokenValue>,
     pub errors: Vec<ParseError>,
 }
 
@@ -320,31 +71,31 @@ impl Parser {
         }
     }
 
-    fn current(&self) -> Option<&Token> {
+    pub(crate) fn current(&self) -> Option<&Token> {
         self.tokens.get(self.pos)
     }
 
-    fn peek_next(&self) -> Option<&Token> {
+    pub(crate) fn peek_next(&self) -> Option<&Token> {
         self.tokens.get(self.pos + 1)
     }
 
-    fn advance(&mut self) -> Option<&Token> {
+    pub(crate) fn advance(&mut self) -> Option<&Token> {
         let tok = self.tokens.get(self.pos);
         self.pos += 1;
         tok
     }
 
-    fn matches(&self, types: &[TokenType]) -> bool {
+    pub(crate) fn matches(&self, types: &[TokenType]) -> bool {
         self.current().map(|t| types.contains(&t.ttype)).unwrap_or(false)
     }
 
-    fn skip_newlines(&mut self) {
+    pub(crate) fn skip_newlines(&mut self) {
         while self.matches(&[TokenType::Newline]) {
             self.advance();
         }
     }
 
-    fn resolve(&self, tok: &Token) -> TokenValue {
+    pub(crate) fn resolve(&self, tok: &Token) -> TokenValue {
         if tok.ttype == TokenType::Var {
             if let TokenValue::Str(name) = &tok.value {
                 if let Some(val) = self.variables.get(name) {
@@ -355,7 +106,7 @@ impl Parser {
         tok.value.clone()
     }
 
-    fn error(&mut self, msg: &str) {
+    pub(crate) fn error(&mut self, msg: &str) {
         let (line, col) = self.current().map(|t| (t.line, t.col)).unwrap_or((0, 0));
         self.errors.push(ParseError { message: msg.into(), line, col });
     }
@@ -378,7 +129,7 @@ impl Parser {
         AstNode::Scene(children)
     }
 
-    fn parse_statement(&mut self) -> Option<AstNode> {
+    pub(crate) fn parse_statement(&mut self) -> Option<AstNode> {
         let tok = self.current()?;
 
         if tok.ttype == TokenType::Var {
@@ -400,6 +151,9 @@ impl Parser {
             "canvas" => Some(self.parse_canvas()),
             "group" => Some(self.parse_group()),
             "stack" | "row" => Some(self.parse_layout(&cmd)),
+            "graph" => Some(self.parse_graph()),
+            "node" => Some(AstNode::Shape(self.parse_node_as_shape())),
+            "edge" => Some(AstNode::Shape(self.parse_edge_as_shape())),
             _ if SHAPES.contains(cmd.as_str()) => Some(self.parse_shape(&cmd)),
             _ => {
                 self.error(&format!("Unknown command: {}", cmd));
@@ -540,7 +294,367 @@ impl Parser {
         AstNode::Shape(shape)
     }
 
-    fn parse_shape(&mut self, kind: &str) -> AstNode {
+    fn parse_graph(&mut self) -> AstNode {
+        let mut graph = AstGraph::default();
+
+        // Parse inline graph properties
+        while self.matches(&[TokenType::Ident]) {
+            let prop = self.current().and_then(|t| match &t.value {
+                TokenValue::Str(s) => Some(s.clone()),
+                _ => None,
+            });
+            self.advance();
+
+            match prop.as_deref() {
+                Some(p) if GRAPH_LAYOUTS.contains(p) => graph.layout = p.to_string(),
+                Some("vertical") | Some("horizontal") => {
+                    if let Some(p) = prop { graph.direction = p; }
+                }
+                Some("spacing") if self.matches(&[TokenType::Number]) => {
+                    if let Some(tok) = self.advance() {
+                        if let TokenValue::Num(n) = tok.value { graph.spacing = n; }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        self.skip_newlines();
+        if self.matches(&[TokenType::Indent]) {
+            self.advance();
+            self.parse_graph_block(&mut graph);
+        }
+
+        AstNode::Graph(graph)
+    }
+
+    fn parse_graph_block(&mut self, graph: &mut AstGraph) {
+        while let Some(tok) = self.current() {
+            if tok.ttype == TokenType::Dedent {
+                self.advance();
+                break;
+            }
+
+            self.skip_newlines();
+            if self.matches(&[TokenType::Dedent]) {
+                self.advance();
+                break;
+            }
+
+            if let Some(tok) = self.current() {
+                if tok.ttype == TokenType::Ident {
+                    let cmd = match &tok.value {
+                        TokenValue::Str(s) => s.clone(),
+                        _ => { self.advance(); continue; }
+                    };
+                    self.advance();
+
+                    match cmd.as_str() {
+                        "node" => graph.nodes.push(self.parse_graph_node()),
+                        "edge" => graph.edges.push(self.parse_graph_edge()),
+                        "layout" if self.matches(&[TokenType::Ident]) => {
+                            if let Some(t) = self.advance() {
+                                if let TokenValue::Str(s) = &t.value {
+                                    if GRAPH_LAYOUTS.contains(s.as_str()) { graph.layout = s.clone(); }
+                                }
+                            }
+                        }
+                        "direction" if self.matches(&[TokenType::Ident]) => {
+                            if let Some(t) = self.advance() {
+                                if let TokenValue::Str(s) = &t.value {
+                                    graph.direction = s.clone();
+                                }
+                            }
+                        }
+                        "spacing" if self.matches(&[TokenType::Number]) => {
+                            if let Some(t) = self.advance() {
+                                if let TokenValue::Num(n) = t.value { graph.spacing = n; }
+                            }
+                        }
+                        _ => {}
+                    }
+                } else {
+                    self.advance();
+                }
+            }
+        }
+    }
+
+    pub(crate) fn parse_graph_node(&mut self) -> GraphNode {
+        let mut node = GraphNode::default();
+
+        // First token should be the ID (string)
+        if self.matches(&[TokenType::String]) {
+            if let Some(tok) = self.advance() {
+                if let TokenValue::Str(s) = &tok.value { node.id = s.clone(); }
+            }
+        }
+
+        // Parse inline properties
+        while let Some(tok) = self.current() {
+            if self.matches(&[TokenType::Newline, TokenType::Eof]) { break; }
+
+            match tok.ttype {
+                TokenType::Pair => {
+                    if let TokenValue::Pair(a, b) = self.advance().map(|t| &t.value).unwrap() {
+                        if node.at.is_none() { node.at = Some((*a, *b)); }
+                        else if node.size.is_none() { node.size = Some((*a, *b)); }
+                    }
+                }
+                TokenType::Color | TokenType::Var => {
+                    let val = self.resolve(tok);
+                    self.advance();
+                    if let TokenValue::Str(s) = val { node.style.fill = Some(s); }
+                }
+                TokenType::Ident => {
+                    let key = match &tok.value { TokenValue::Str(s) => s.clone(), _ => { self.advance(); continue; } };
+                    self.advance();
+
+                    match key.as_str() {
+                        "at" if self.matches(&[TokenType::Pair]) => {
+                            if let Some(t) = self.advance() {
+                                if let TokenValue::Pair(a, b) = t.value { node.at = Some((a, b)); }
+                            }
+                        }
+                        "size" if self.matches(&[TokenType::Pair]) => {
+                            if let Some(t) = self.advance() {
+                                if let TokenValue::Pair(a, b) = t.value { node.size = Some((a, b)); }
+                            }
+                        }
+                        "shape" if self.matches(&[TokenType::Ident]) => {
+                            if let Some(t) = self.advance() {
+                                if let TokenValue::Str(s) = &t.value {
+                                    if NODE_SHAPES.contains(s.as_str()) { node.shape = s.clone(); }
+                                }
+                            }
+                        }
+                        "label" if self.matches(&[TokenType::String]) => {
+                            if let Some(t) = self.advance() {
+                                if let TokenValue::Str(s) = &t.value { node.label = Some(s.clone()); }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => { self.advance(); }
+            }
+        }
+
+        // Parse block if present
+        self.skip_newlines();
+        if self.matches(&[TokenType::Indent]) {
+            self.advance();
+            self.parse_node_block(&mut node);
+        }
+
+        node
+    }
+
+    fn parse_node_block(&mut self, node: &mut GraphNode) {
+        while let Some(tok) = self.current() {
+            if tok.ttype == TokenType::Dedent { self.advance(); break; }
+
+            self.skip_newlines();
+            if self.matches(&[TokenType::Dedent]) { self.advance(); break; }
+
+            if let Some(tok) = self.current() {
+                if tok.ttype == TokenType::Ident {
+                    let prop = match &tok.value { TokenValue::Str(s) => s.clone(), _ => { self.advance(); continue; } };
+                    self.advance();
+
+                    match prop.as_str() {
+                        "shape" if self.matches(&[TokenType::Ident]) => {
+                            if let Some(t) = self.advance() {
+                                if let TokenValue::Str(s) = &t.value {
+                                    if NODE_SHAPES.contains(s.as_str()) { node.shape = s.clone(); }
+                                }
+                            }
+                        }
+                        "label" if self.matches(&[TokenType::String]) => {
+                            if let Some(t) = self.advance() {
+                                if let TokenValue::Str(s) = &t.value { node.label = Some(s.clone()); }
+                            }
+                        }
+                        "fill" if self.matches(&[TokenType::Color, TokenType::Var]) => {
+                            if let Some(t) = self.current() {
+                                if let TokenValue::Str(s) = self.resolve(t) { node.style.fill = Some(s); }
+                                self.advance();
+                            }
+                        }
+                        "stroke" if self.matches(&[TokenType::Color, TokenType::Var]) => {
+                            if let Some(t) = self.current() {
+                                if let TokenValue::Str(s) = self.resolve(t) { node.style.stroke = Some(s); }
+                                self.advance();
+                            }
+                        }
+                        _ => {}
+                    }
+                } else {
+                    self.advance();
+                }
+            }
+        }
+    }
+
+    pub(crate) fn parse_graph_edge(&mut self) -> GraphEdge {
+        let mut edge = GraphEdge::default();
+
+        // Parse: "from" -> "to"
+        if self.matches(&[TokenType::String]) {
+            if let Some(tok) = self.advance() {
+                if let TokenValue::Str(s) = &tok.value { edge.from = s.clone(); }
+            }
+        }
+
+        // Expect arrow
+        if self.matches(&[TokenType::Arrow]) { self.advance(); }
+
+        if self.matches(&[TokenType::String]) {
+            if let Some(tok) = self.advance() {
+                if let TokenValue::Str(s) = &tok.value { edge.to = s.clone(); }
+            }
+        }
+
+        // Parse inline properties
+        while let Some(tok) = self.current() {
+            if self.matches(&[TokenType::Newline, TokenType::Eof]) { break; }
+
+            match tok.ttype {
+                TokenType::Color | TokenType::Var => {
+                    let val = self.resolve(tok);
+                    self.advance();
+                    if let TokenValue::Str(s) = val { edge.stroke = Some(s); }
+                }
+                TokenType::Number => {
+                    if let TokenValue::Num(n) = tok.value { edge.stroke_width = n; }
+                    self.advance();
+                }
+                TokenType::Ident => {
+                    let key = match &tok.value { TokenValue::Str(s) => s.clone(), _ => { self.advance(); continue; } };
+                    self.advance();
+
+                    match key.as_str() {
+                        "style" if self.matches(&[TokenType::Ident]) => {
+                            if let Some(t) = self.advance() {
+                                if let TokenValue::Str(s) = &t.value {
+                                    if EDGE_STYLES.contains(s.as_str()) { edge.style = s.clone(); }
+                                }
+                            }
+                        }
+                        "arrow" if self.matches(&[TokenType::Ident]) => {
+                            if let Some(t) = self.advance() {
+                                if let TokenValue::Str(s) = &t.value {
+                                    if ARROW_TYPES.contains(s.as_str()) { edge.arrow = s.clone(); }
+                                }
+                            }
+                        }
+                        "label" if self.matches(&[TokenType::String]) => {
+                            if let Some(t) = self.advance() {
+                                if let TokenValue::Str(s) = &t.value { edge.label = Some(s.clone()); }
+                            }
+                        }
+                        "stroke" if self.matches(&[TokenType::Color, TokenType::Var]) => {
+                            if let Some(t) = self.current() {
+                                if let TokenValue::Str(s) = self.resolve(t) { edge.stroke = Some(s); }
+                                self.advance();
+                            }
+                        }
+                        k if EDGE_STYLES.contains(k) => edge.style = k.to_string(),
+                        k if ARROW_TYPES.contains(k) => edge.arrow = k.to_string(),
+                        _ => {}
+                    }
+                }
+                _ => { self.advance(); }
+            }
+        }
+
+        // Parse block if present
+        self.skip_newlines();
+        if self.matches(&[TokenType::Indent]) {
+            self.advance();
+            self.parse_edge_block(&mut edge);
+        }
+
+        edge
+    }
+
+    fn parse_edge_block(&mut self, edge: &mut GraphEdge) {
+        while let Some(tok) = self.current() {
+            if tok.ttype == TokenType::Dedent { self.advance(); break; }
+
+            self.skip_newlines();
+            if self.matches(&[TokenType::Dedent]) { self.advance(); break; }
+
+            if let Some(tok) = self.current() {
+                if tok.ttype == TokenType::Ident {
+                    let prop = match &tok.value { TokenValue::Str(s) => s.clone(), _ => { self.advance(); continue; } };
+                    self.advance();
+
+                    match prop.as_str() {
+                        "style" if self.matches(&[TokenType::Ident]) => {
+                            if let Some(t) = self.advance() {
+                                if let TokenValue::Str(s) = &t.value {
+                                    if EDGE_STYLES.contains(s.as_str()) { edge.style = s.clone(); }
+                                }
+                            }
+                        }
+                        "arrow" if self.matches(&[TokenType::Ident]) => {
+                            if let Some(t) = self.advance() {
+                                if let TokenValue::Str(s) = &t.value {
+                                    if ARROW_TYPES.contains(s.as_str()) { edge.arrow = s.clone(); }
+                                }
+                            }
+                        }
+                        "label" if self.matches(&[TokenType::String]) => {
+                            if let Some(t) = self.advance() {
+                                if let TokenValue::Str(s) = &t.value { edge.label = Some(s.clone()); }
+                            }
+                        }
+                        "stroke" if self.matches(&[TokenType::Color, TokenType::Var]) => {
+                            if let Some(t) = self.current() {
+                                if let TokenValue::Str(s) = self.resolve(t) { edge.stroke = Some(s); }
+                                self.advance();
+                            }
+                        }
+                        k if EDGE_STYLES.contains(k) => edge.style = k.to_string(),
+                        k if ARROW_TYPES.contains(k) => edge.arrow = k.to_string(),
+                        _ => {}
+                    }
+                } else {
+                    self.advance();
+                }
+            }
+        }
+    }
+
+    /// Parse standalone node (outside graph) - returns as shape with special kind
+    fn parse_node_as_shape(&mut self) -> AstShape {
+        let node = self.parse_graph_node();
+        let mut shape = AstShape::new("node");
+        shape.props.insert("id".into(), PropValue::Str(node.id));
+        shape.props.insert("shape".into(), PropValue::Str(node.shape));
+        if let Some(label) = node.label { shape.props.insert("label".into(), PropValue::Str(label)); }
+        if let Some((x, y)) = node.at { shape.props.insert("at".into(), PropValue::Pair(x, y)); }
+        if let Some((w, h)) = node.size { shape.props.insert("size".into(), PropValue::Pair(w, h)); }
+        shape.style = node.style;
+        shape
+    }
+
+    /// Parse standalone edge (outside graph) - returns as shape with special kind
+    fn parse_edge_as_shape(&mut self) -> AstShape {
+        let edge = self.parse_graph_edge();
+        let mut shape = AstShape::new("edge");
+        shape.props.insert("from".into(), PropValue::Str(edge.from));
+        shape.props.insert("to".into(), PropValue::Str(edge.to));
+        shape.props.insert("style".into(), PropValue::Str(edge.style));
+        shape.props.insert("arrow".into(), PropValue::Str(edge.arrow));
+        if let Some(label) = edge.label { shape.props.insert("label".into(), PropValue::Str(label)); }
+        if let Some(stroke) = edge.stroke { shape.style.stroke = Some(stroke); }
+        shape.style.stroke_width = edge.stroke_width;
+        shape
+    }
+
+    pub(crate) fn parse_shape(&mut self, kind: &str) -> AstNode {
         let mut shape = AstShape::new(kind);
 
         while let Some(tok) = self.current() {
@@ -694,7 +808,7 @@ impl Parser {
         AstNode::Shape(shape)
     }
 
-    fn parse_block(&mut self, shape: &mut AstShape) {
+    pub(crate) fn parse_block(&mut self, shape: &mut AstShape) {
         while let Some(tok) = self.current() {
             if tok.ttype == TokenType::Dedent {
                 self.advance();
@@ -1014,7 +1128,7 @@ impl Parser {
         gradient
     }
 
-    fn parse_points(&mut self) -> Vec<(f64, f64)> {
+    pub(crate) fn parse_points(&mut self) -> Vec<(f64, f64)> {
         let mut points = Vec::new();
         self.advance(); // consume [
 
@@ -1035,316 +1149,3 @@ impl Parser {
     }
 }
 
-#[cfg(feature = "python")]
-#[pymethods]
-impl Parser {
-    #[new]
-    fn py_new(tokens: Vec<Token>) -> Self {
-        Self::new(tokens)
-    }
-
-    /// Parse and return the AST as native Python objects
-    fn parse_py(&mut self, py: Python<'_>) -> PyObject {
-        ast_node_to_py(py, &self.parse())
-    }
-
-    /// Get parse errors
-    fn get_errors(&self) -> Vec<ParseError> {
-        self.errors.clone()
-    }
-}
-
-/// Convert AstNode to Python object directly
-#[cfg(feature = "python")]
-fn ast_node_to_py(py: Python<'_>, node: &AstNode) -> PyObject {
-    use pyo3::types::{PyDict, PyList};
-    let dict = PyDict::new(py);
-    
-    match node {
-        AstNode::Scene(children) => {
-            let list = PyList::new(py, children.iter().map(|c| ast_node_to_py(py, c)));
-            dict.set_item("Scene", list).ok();
-        }
-        AstNode::Canvas(c) => {
-            let canvas = PyDict::new(py);
-            canvas.set_item("size", c.size.to_string()).ok();
-            canvas.set_item("width", c.width()).ok();
-            canvas.set_item("height", c.height()).ok();
-            canvas.set_item("fill", &c.fill).ok();
-            dict.set_item("Canvas", canvas).ok();
-        }
-        AstNode::Shape(s) => {
-            dict.set_item("Shape", ast_shape_to_py(py, s)).ok();
-        }
-        AstNode::Variable { name, value } => {
-            let var = PyDict::new(py);
-            var.set_item("name", name).ok();
-            var.set_item("value", token_value_to_py(py, value.as_ref())).ok();
-            dict.set_item("Variable", var).ok();
-        }
-    }
-    dict.into()
-}
-
-/// Convert AstShape to Python dict
-#[cfg(feature = "python")]
-fn ast_shape_to_py(py: Python<'_>, shape: &AstShape) -> PyObject {
-    use pyo3::types::{PyDict, PyList};
-    let dict = PyDict::new(py);
-    
-    dict.set_item("kind", &shape.kind).ok();
-    
-    // Convert props HashMap to PyDict
-    let props = PyDict::new(py);
-    for (k, v) in &shape.props {
-        props.set_item(k, prop_value_to_py(py, v)).ok();
-    }
-    dict.set_item("props", props).ok();
-    
-    // Convert style
-    let style = PyDict::new(py);
-    style.set_item("fill", shape.style.fill.as_deref()).ok();
-    style.set_item("stroke", shape.style.stroke.as_deref()).ok();
-    style.set_item("stroke_width", shape.style.stroke_width).ok();
-    style.set_item("opacity", shape.style.opacity).ok();
-    style.set_item("corner", shape.style.corner).ok();
-    style.set_item("font", shape.style.font.as_deref()).ok();
-    style.set_item("font_size", shape.style.font_size).ok();
-    style.set_item("font_weight", &shape.style.font_weight).ok();
-    style.set_item("text_anchor", &shape.style.text_anchor).ok();
-    dict.set_item("style", style).ok();
-    
-    // Convert shadow
-    if let Some(shadow) = &shape.shadow {
-        let s = PyDict::new(py);
-        s.set_item("x", shadow.x).ok();
-        s.set_item("y", shadow.y).ok();
-        s.set_item("blur", shadow.blur).ok();
-        s.set_item("color", &shadow.color).ok();
-        dict.set_item("shadow", s).ok();
-    }
-    
-    // Convert gradient
-    if let Some(grad) = &shape.gradient {
-        let g = PyDict::new(py);
-        g.set_item("gtype", &grad.gtype).ok();
-        g.set_item("from", &grad.from).ok();
-        g.set_item("to", &grad.to).ok();
-        g.set_item("angle", grad.angle).ok();
-        dict.set_item("gradient", g).ok();
-    }
-    
-    // Convert transform
-    let transform = PyDict::new(py);
-    transform.set_item("translate", shape.transform.translate).ok();
-    transform.set_item("rotate", shape.transform.rotate).ok();
-    transform.set_item("scale", shape.transform.scale).ok();
-    transform.set_item("origin", shape.transform.origin).ok();
-    dict.set_item("transform", transform).ok();
-    
-    // Convert children recursively
-    let children = PyList::new(py, shape.children.iter().map(|c| ast_shape_to_py(py, c)));
-    dict.set_item("children", children).ok();
-    
-    dict.into()
-}
-
-/// Convert PropValue to Python object
-#[cfg(feature = "python")]
-fn prop_value_to_py(py: Python<'_>, val: &PropValue) -> PyObject {
-    use pyo3::types::PyList;
-    match val {
-        PropValue::None => py.None(),
-        PropValue::Str(s) => s.into_py(py),
-        PropValue::Num(n) => n.into_py(py),
-        PropValue::Pair(a, b) => (*a, *b).into_py(py),
-        PropValue::Points(pts) => PyList::new(py, pts.iter().map(|(a, b)| (*a, *b))).into(),
-    }
-}
-
-/// Convert TokenValue to Python object
-#[cfg(feature = "python")]
-fn token_value_to_py(py: Python<'_>, val: Option<&TokenValue>) -> PyObject {
-    match val {
-        None | Some(TokenValue::None) => py.None(),
-        Some(TokenValue::Str(s)) => s.into_py(py),
-        Some(TokenValue::Num(n)) => n.into_py(py),
-        Some(TokenValue::Pair(a, b)) => (*a, *b).into_py(py),
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// WASM bindings
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[cfg(feature = "wasm")]
-use wasm_bindgen::prelude::*;
-
-/// Parse DSL source and return AST as JSON
-#[cfg(feature = "wasm")]
-#[wasm_bindgen]
-pub fn parse(source: &str) -> String {
-    let mut lexer = super::lexer::Lexer::new(source);
-    let tokens = lexer.tokenize();
-    let mut parser = Parser::new(tokens);
-    let ast = parser.parse();
-    serde_json::to_string(&ast).unwrap_or_else(|_| "null".to_string())
-}
-
-/// Parse and return errors as JSON
-#[cfg(feature = "wasm")]
-#[wasm_bindgen]
-pub fn parse_with_errors(source: &str) -> String {
-    let mut lexer = super::lexer::Lexer::new(source);
-    let tokens = lexer.tokenize();
-    let mut parser = Parser::new(tokens);
-    let ast = parser.parse();
-    
-    #[derive(Serialize)]
-    struct ParseResult {
-        ast: AstNode,
-        errors: Vec<ParseError>,
-    }
-    
-    serde_json::to_string(&ParseResult { ast, errors: parser.errors })
-        .unwrap_or_else(|_| r#"{"ast":null,"errors":[]}"#.to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::dsl::Lexer;
-
-    fn parse_source(source: &str) -> AstNode {
-        let mut lexer = Lexer::new(source);
-        let tokens = lexer.tokenize();
-        let mut parser = Parser::new(tokens);
-        parser.parse()
-    }
-
-    #[test]
-    fn test_empty_source() {
-        let ast = parse_source("");
-        assert!(matches!(ast, AstNode::Scene(children) if children.is_empty()));
-    }
-
-    #[test]
-    fn test_canvas() {
-        let ast = parse_source("canvas large fill #1a1a2e");
-        if let AstNode::Scene(children) = ast {
-            assert_eq!(children.len(), 1);
-            if let AstNode::Canvas(c) = &children[0] {
-                assert_eq!(c.size, CanvasSize::Large);
-                assert_eq!(c.width(), 96);
-                assert_eq!(c.height(), 96);
-                assert_eq!(c.fill, "#1a1a2e");
-            } else {
-                panic!("Expected Canvas");
-            }
-        } else {
-            panic!("Expected Scene");
-        }
-    }
-    
-    #[test]
-    fn test_canvas_sizes() {
-        for (name, expected_px) in [("nano", 16), ("micro", 24), ("tiny", 32), ("small", 48), 
-                                     ("medium", 64), ("large", 96), ("xlarge", 128), 
-                                     ("huge", 192), ("massive", 256), ("giant", 512)] {
-            let ast = parse_source(&format!("canvas {}", name));
-            if let AstNode::Scene(children) = ast {
-                if let AstNode::Canvas(c) = &children[0] {
-                    assert_eq!(c.width(), expected_px as u32, "Size {} should be {}px", name, expected_px);
-                } else {
-                    panic!("Expected Canvas for size {}", name);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn test_rect() {
-        let ast = parse_source("rect at 100,200 size 50x30 #ff0");
-        if let AstNode::Scene(children) = ast {
-            if let AstNode::Shape(s) = &children[0] {
-                assert_eq!(s.kind, "rect");
-                assert!(matches!(s.props.get("at"), Some(PropValue::Pair(a, b)) if (*a - 100.0).abs() < 0.001 && (*b - 200.0).abs() < 0.001));
-            }
-        }
-    }
-
-    #[test]
-    fn test_circle() {
-        let ast = parse_source("circle at 200,200 radius 50");
-        if let AstNode::Scene(children) = ast {
-            if let AstNode::Shape(s) = &children[0] {
-                assert_eq!(s.kind, "circle");
-                assert!(matches!(s.props.get("radius"), Some(PropValue::Num(n)) if (*n - 50.0).abs() < 0.001));
-            }
-        }
-    }
-
-    #[test]
-    fn test_nested_style() {
-        let ast = parse_source("rect\n  fill #ff0\n  stroke #000 2");
-        if let AstNode::Scene(children) = ast {
-            if let AstNode::Shape(s) = &children[0] {
-                assert_eq!(s.style.fill, Some("#ff0".into()));
-                assert_eq!(s.style.stroke, Some("#000".into()));
-                assert!((s.style.stroke_width - 2.0).abs() < 0.001);
-            }
-        }
-    }
-
-    #[test]
-    fn test_variable() {
-        let ast = parse_source("$accent = #ff0\ncircle $accent");
-        if let AstNode::Scene(children) = ast {
-            assert!(matches!(&children[0], AstNode::Variable { .. }));
-        }
-    }
-
-    #[test]
-    fn test_arc() {
-        let ast = parse_source("arc at 200,200 radius 50 start 0 end 180");
-        if let AstNode::Scene(children) = ast {
-            if let AstNode::Shape(s) = &children[0] {
-                assert_eq!(s.kind, "arc");
-                assert!(matches!(s.props.get("at"), Some(PropValue::Pair(a, b)) if (*a - 200.0).abs() < 0.001 && (*b - 200.0).abs() < 0.001));
-                assert!(matches!(s.props.get("radius"), Some(PropValue::Num(n)) if (*n - 50.0).abs() < 0.001));
-                assert!(matches!(s.props.get("start"), Some(PropValue::Num(n)) if n.abs() < 0.001));
-                assert!(matches!(s.props.get("end"), Some(PropValue::Num(n)) if (*n - 180.0).abs() < 0.001));
-            } else {
-                panic!("Expected Shape");
-            }
-        }
-    }
-
-    #[test]
-    fn test_curve() {
-        let ast = parse_source("curve points [100,100 150,50 200,100] smooth");
-        if let AstNode::Scene(children) = ast {
-            if let AstNode::Shape(s) = &children[0] {
-                assert_eq!(s.kind, "curve");
-                assert!(matches!(s.props.get("points"), Some(PropValue::Points(pts)) if pts.len() == 3));
-                assert!(matches!(s.props.get("smooth"), Some(PropValue::Num(n)) if (*n - 1.0).abs() < 0.001));
-            } else {
-                panic!("Expected Shape");
-            }
-        }
-    }
-
-    #[test]
-    fn test_curve_sharp() {
-        let ast = parse_source("curve points [0,0 50,50 100,0] sharp closed");
-        if let AstNode::Scene(children) = ast {
-            if let AstNode::Shape(s) = &children[0] {
-                assert_eq!(s.kind, "curve");
-                assert!(matches!(s.props.get("smooth"), Some(PropValue::Num(n)) if n.abs() < 0.001));
-                assert!(matches!(s.props.get("closed"), Some(PropValue::Num(n)) if (*n - 1.0).abs() < 0.001));
-            } else {
-                panic!("Expected Shape");
-            }
-        }
-    }
-}

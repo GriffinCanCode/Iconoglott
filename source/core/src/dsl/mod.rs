@@ -5,8 +5,8 @@ mod parser;
 
 pub use lexer::{CanvasSize, Lexer, Token, TokenType, TokenValue};
 pub use parser::{
-    AstCanvas, AstNode, AstShape, AstStyle, AstTransform,
-    GradientDef, ParseError, Parser, PropValue, ShadowDef,
+    AstCanvas, AstGraph, AstNode, AstShape, AstStyle, AstTransform,
+    FullStyle, GradientDef, GraphEdge, GraphNode, ParseError, Parser, PropValue, ShadowDef,
 };
 
 // Re-export WASM bindings
