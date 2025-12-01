@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::shape::{Circle, Ellipse, Image, Line, Path, Polygon, Rect, Text};
 
 /// A renderable element in the scene
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Element {
     Rect(Rect),
     Circle(Circle),
@@ -70,7 +70,7 @@ impl Element {
 }
 
 /// Gradient definition
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[pyclass]
 pub struct Gradient {
     #[pyo3(get, set)]
@@ -114,7 +114,7 @@ impl Gradient {
 }
 
 /// Filter definition
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[pyclass]
 pub struct Filter {
     #[pyo3(get, set)]
@@ -221,6 +221,23 @@ impl Scene {
 }
 
 impl Scene {
+    /// Internal constructor for testing (not exposed to Python)
+    pub fn new_internal(width: u32, height: u32, background: String) -> Self {
+        Self { width, height, background, elements: Vec::new(), gradients: Vec::new(), filters: Vec::new() }
+    }
+
+    /// Access elements slice for diffing
+    #[inline]
+    pub fn elements(&self) -> &[Element] { &self.elements }
+
+    /// Access gradients slice for diffing
+    #[inline]
+    pub fn gradients(&self) -> &[Gradient] { &self.gradients }
+
+    /// Access filters slice for diffing
+    #[inline]
+    pub fn filters(&self) -> &[Filter] { &self.filters }
+
     pub fn to_json(&self) -> String {
         serde_json::json!({
             "width": self.width,
