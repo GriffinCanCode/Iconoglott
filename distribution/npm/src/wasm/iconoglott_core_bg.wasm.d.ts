@@ -1,0 +1,38 @@
+/* tslint:disable */
+/* eslint-disable */
+export const memory: WebAssembly.Memory;
+export const init: () => void;
+export const fnv1a_hash: (a: number, b: number) => [number, number];
+export const compute_element_id: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+export const __wbg_wasmstyle_free: (a: number, b: number) => void;
+export const wasmstyle_new: () => number;
+export const wasmstyle_set_fill: (a: number, b: number, c: number) => void;
+export const wasmstyle_set_stroke: (a: number, b: number, c: number) => void;
+export const wasmstyle_set_stroke_width: (a: number, b: number) => void;
+export const wasmstyle_set_opacity: (a: number, b: number) => void;
+export const wasmstyle_set_corner: (a: number, b: number) => void;
+export const wasmstyle_set_filter: (a: number, b: number, c: number) => void;
+export const render_rect: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number];
+export const render_circle: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
+export const render_ellipse: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
+export const render_line: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number];
+export const render_path: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+export const render_polygon: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+export const render_text: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number) => [number, number];
+export const render_image: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
+export const render_linear_gradient: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
+export const render_radial_gradient: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+export const render_shadow_filter: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
+export const render_blur_filter: (a: number, b: number, c: number) => [number, number];
+export const diff_scenes: (a: number, b: number, c: number, d: number) => [number, number];
+export const scenes_equal: (a: number, b: number, c: number, d: number) => number;
+export const render_scene: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
+export const compute_path_bounds: (a: number, b: number) => [number, number];
+export const parse: (a: number, b: number) => [number, number];
+export const parse_with_errors: (a: number, b: number) => [number, number];
+export const tokenize: (a: number, b: number) => [number, number];
+export const __wbindgen_free: (a: number, b: number, c: number) => void;
+export const __wbindgen_malloc: (a: number, b: number) => number;
+export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+export const __wbindgen_externrefs: WebAssembly.Table;
+export const __wbindgen_start: () => void;

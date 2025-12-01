@@ -1,0 +1,16 @@
+{
+  "name": "iconoglott-core",
+  "type": "module",
+  "description": "High-performance SVG rendering engine with incremental diffing",
+  "version": "0.1.0",
+  "files": [
+    "iconoglott_core_bg.wasm",
+    "iconoglott_core.js",
+    "iconoglott_core.d.ts"
+  ],
+  "main": "iconoglott_core.js",
+  "types": "iconoglott_core.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
