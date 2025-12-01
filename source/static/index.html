@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Iconoglott</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Outfit:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --surface2: #1a1a24;
+      --border: #2a2a3a;
+      --text: #e4e4ed;
+      --muted: #6b6b7d;
+      --accent: #ff6b6b;
+      --accent2: #4ecdc4;
+      --purple: #a855f7;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Outfit', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(400px, 1fr) 1.5fr;
+    }
+
+    .panel {
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .editor-panel {
+      background: linear-gradient(180deg, var(--surface) 0%, var(--bg) 100%);
+      border-right: 1px solid var(--border);
+    }
+
+    .header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      background: var(--surface);
+    }
+
+    .logo {
+      font-size: 1.1rem;
+      font-weight: 600;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--purple) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.02em;
+    }
+
+    .status {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      transition: background 0.2s;
+      margin-left: auto;
+    }
+    .status.connected { background: var(--accent2); box-shadow: 0 0 8px var(--accent2); }
+
+    #editor {
+      flex: 1;
+      background: transparent;
+      border: none;
+      padding: 1.25rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      line-height: 1.8;
+      color: var(--text);
+      resize: none;
+      outline: none;
+      tab-size: 2;
+    }
+
+    #editor::placeholder { color: var(--muted); }
+
+    .canvas-panel {
+      background: 
+        radial-gradient(ellipse at 30% 20%, rgba(168, 85, 247, 0.08) 0%, transparent 50%),
+        radial-gradient(ellipse at 70% 80%, rgba(78, 205, 196, 0.06) 0%, transparent 50%),
+        var(--bg);
+    }
+
+    .preview-header {
+      background: transparent;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .preview-header h2 {
+      font-size: 0.75rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: var(--muted);
+    }
+
+    .canvas-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      overflow: auto;
+    }
+
+    #canvas {
+      border-radius: 12px;
+      box-shadow: 
+        0 25px 80px rgba(0, 0, 0, 0.5),
+        0 0 0 1px rgba(255,255,255,0.05);
+      transition: transform 0.2s ease;
+    }
+
+    #canvas:hover {
+      transform: scale(1.01);
+    }
+
+    .hint {
+      padding: 0.75rem 1.25rem;
+      font-size: 0.7rem;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .hint code {
+      color: var(--accent2);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    @media (max-width: 900px) {
+      body { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="panel editor-panel">
+    <div class="header">
+      <span class="logo">Iconoglott</span>
+      <div class="status" id="status"></div>
+    </div>
+    <textarea id="editor" spellcheck="false" placeholder="// Try the new DSL syntax!
+
+canvas 800x600 fill #1a1a2e
+
+// Variables
+$accent = #e94560
+$blue = #0f3460
+
+// Shapes with named params
+rect at 100,100 size 200x150
+  fill $accent
+  stroke #16213e 2
+  corner 12
+  shadow 0,8 12 #0006
+
+circle at 450,280 radius 80
+  gradient radial #4ecdc4 #0f3460
+
+text &quot;Iconoglott&quot; at 50,50
+  font &quot;Outfit&quot; 36
+  fill #fff
+  bold
+
+// Grouping
+group &quot;buttons&quot;
+  rect at 500,400 size 120x44
+    fill $accent
+    corner 22
+  text &quot;Click me&quot; at 560,428
+    font &quot;Outfit&quot; 14
+    fill #fff
+    center"></textarea>
+    <div class="hint">
+      <code>rect</code> <code>circle</code> <code>text</code> <code>line</code> <code>path</code> | 
+      <code>fill</code> <code>stroke</code> <code>gradient</code> <code>shadow</code> <code>corner</code> |
+      <code>rotate</code> <code>scale</code> <code>translate</code>
+    </div>
+  </div>
+  <div class="panel canvas-panel">
+    <div class="header preview-header">
+      <h2>Preview</h2>
+    </div>
+    <div class="canvas-container">
+      <div id="canvas"></div>
+    </div>
+  </div>
+  <script src="/static/client.js"></script>
+</body>
+</html>
