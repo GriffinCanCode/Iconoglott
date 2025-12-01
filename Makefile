@@ -1,36 +1,43 @@
 # Root Makefile - Iconoglott
 SHELL := /bin/bash
-.PHONY: all clean install dev test start stop killports lint build
+.PHONY: all clean install dev test start stop killports lint build core
 
 VENV := .venv
 PYTHON := $(VENV)/bin/python3
 PIP := $(VENV)/bin/pip
+MATURIN := $(VENV)/bin/maturin
 
-# Setup venv and install deps
-install: $(VENV)
-	$(PIP) install -e ".[dev]"
+# Setup venv, install deps, and build Rust core (required)
+install: $(VENV) core
+	@echo "Installation complete with Rust core"
 
 $(VENV):
 	python3 -m venv $(VENV)
+	$(PIP) install -e ".[dev]"
 
-# Dev install
+# Build Rust core module (required for the interpreter)
+core: $(VENV)
+	@echo "Building Rust core..."
+	@cd source/core && $(MATURIN) develop --release
+	@echo "Rust core ready"
+
+# Dev install (alias for install)
 dev: install
-	@echo "Dev environment ready"
 
 # Delegate to source Makefile
 killports:
 	@$(MAKE) -C source killports
 
-start:
+start: install
 	@$(MAKE) -C source start
 
-start-bg:
+start-bg: install
 	@$(MAKE) -C source start-bg
 
 stop:
 	@$(MAKE) -C source stop
 
-test:
+test: install
 	@$(MAKE) -C source test
 
 lint:
@@ -39,10 +46,9 @@ lint:
 # Clean everything
 clean:
 	@$(MAKE) -C source clean
-	@rm -rf $(VENV) *.egg-info dist build
+	@rm -rf $(VENV) *.egg-info dist build source/core/target
 	@echo "Cleaned all"
 
 # Build distribution
-build: clean
+build: clean install
 	$(PYTHON) -m build
-
