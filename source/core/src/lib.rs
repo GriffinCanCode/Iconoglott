@@ -90,12 +90,19 @@ pub use hash::{ContentHash, ElementId, ElementKind, Fnv1a, IdGen};
 // Font metrics (always available)
 pub use font::{get_metrics, measure_text, FontMetrics, TextMetrics};
 
+// Path utilities and boolean operations (always available)
+pub use path::{parse_path_bounds, BoolOp, BoolResult, Polygon as BoolPolygon, path_boolean, flatten_path};
+
 // Lexer & Parser (always available) - re-export from dsl module
 pub use dsl::{
     AstCanvas, AstGraph, AstNode, AstShape, AstStyle, AstTransform, CanvasSize,
     ErrorKind, ErrorSeverity, FullStyle, GradientDef, GraphEdge, GraphNode,
     Lexer, ParseError, Parser, PropValue, ShadowDef, Span,
     Token, TokenType, TokenValue,
+    // Animation primitives
+    Animation, AnimationState, AnimatableProperty, Direction, Duration,
+    Easing, FillMode, Interpolation, Iteration, Keyframes, KeyframeStep,
+    PlayState, StepPosition, Transition,
 };
 
 // Aliased modules for compatibility
@@ -104,13 +111,13 @@ pub mod parser { pub use crate::dsl::*; }
 pub mod id { pub use crate::hash::*; }
 
 #[cfg(any(feature = "python", feature = "bench"))]
-pub use render::{DiffOp, DiffResult, IndexedScene};
+pub use render::{CommandHistory, DiffOp, DiffResult, IndexedScene, SceneCommand};
 
 #[cfg(any(feature = "python", feature = "bench"))]
 pub use scene::{
     ArrowType, Circle, Color, Diamond, Edge, EdgeStyle, Element, Ellipse,
     Filter, Gradient, GraphContainer, Image, Line, Node, Path, Polygon,
-    Rect, Scene, Style, Text,
+    Rect, Scene, SceneKeyframes, Style, Symbol, Text, Use,
 };
 
 // Shape module alias for compatibility
@@ -120,3 +127,7 @@ pub mod shape { pub use crate::scene::*; }
 // Diff module alias for compatibility  
 #[cfg(any(feature = "python", feature = "bench"))]
 pub mod diff { pub use crate::render::*; }
+
+// Snapshot tests (uses insta)
+#[cfg(all(test, any(feature = "python", feature = "bench")))]
+mod snapshot_tests;

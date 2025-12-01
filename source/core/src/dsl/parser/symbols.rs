@@ -164,6 +164,7 @@ impl Resolver {
                 use_ref.style = self.resolve_style(use_ref.style);
                 AstNode::Use(use_ref)
             }
+            AstNode::Keyframes(k) => AstNode::Keyframes(k),
         }
     }
 

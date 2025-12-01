@@ -687,6 +687,79 @@ pub fn render_use(href: &str, x: f32, y: f32, width: JsValue, height: JsValue, s
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Path Boolean Operations
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Boolean operation type for path operations
+#[wasm_bindgen]
+#[derive(Clone, Copy)]
+pub enum WasmBoolOp {
+    Union = 0,
+    Intersection = 1,
+    Difference = 2,
+    Xor = 3,
+}
+
+impl From<WasmBoolOp> for crate::path::BoolOp {
+    fn from(op: WasmBoolOp) -> Self {
+        match op {
+            WasmBoolOp::Union => crate::path::BoolOp::Union,
+            WasmBoolOp::Intersection => crate::path::BoolOp::Intersection,
+            WasmBoolOp::Difference => crate::path::BoolOp::Difference,
+            WasmBoolOp::Xor => crate::path::BoolOp::Xor,
+        }
+    }
+}
+
+/// Perform boolean operation on two SVG paths
+/// 
+/// # Arguments
+/// * `path_a` - First SVG path d attribute
+/// * `path_b` - Second SVG path d attribute
+/// * `op` - Boolean operation (Union=0, Intersection=1, Difference=2, Xor=3)
+/// * `tolerance` - Curve flattening tolerance (smaller = more accurate but slower)
+/// 
+/// # Returns
+/// Combined SVG path d attribute string
+#[wasm_bindgen]
+pub fn path_boolean_op(path_a: &str, path_b: &str, op: WasmBoolOp, tolerance: f64) -> String {
+    crate::path::path_boolean(path_a, path_b, op.into(), tolerance)
+}
+
+/// Perform union of two SVG paths (combine both areas)
+#[wasm_bindgen]
+pub fn path_union(path_a: &str, path_b: &str, tolerance: f64) -> String {
+    crate::path::path_boolean(path_a, path_b, crate::path::BoolOp::Union, tolerance)
+}
+
+/// Perform intersection of two SVG paths (common area only)
+#[wasm_bindgen]
+pub fn path_intersection(path_a: &str, path_b: &str, tolerance: f64) -> String {
+    crate::path::path_boolean(path_a, path_b, crate::path::BoolOp::Intersection, tolerance)
+}
+
+/// Perform difference of two SVG paths (A minus B)
+#[wasm_bindgen]
+pub fn path_difference(path_a: &str, path_b: &str, tolerance: f64) -> String {
+    crate::path::path_boolean(path_a, path_b, crate::path::BoolOp::Difference, tolerance)
+}
+
+/// Perform XOR of two SVG paths (area in either but not both)
+#[wasm_bindgen]
+pub fn path_xor(path_a: &str, path_b: &str, tolerance: f64) -> String {
+    crate::path::path_boolean(path_a, path_b, crate::path::BoolOp::Xor, tolerance)
+}
+
+/// Flatten an SVG path to line segments
+/// Returns an array of [x, y] coordinates
+#[wasm_bindgen]
+pub fn flatten_svg_path(d: &str, tolerance: f64) -> JsValue {
+    let polygon = crate::path::flatten_path(d, tolerance);
+    let coords: Vec<[f64; 2]> = polygon.vertices.iter().map(|p| [p.x, p.y]).collect();
+    serde_wasm_bindgen::to_value(&coords).unwrap_or(JsValue::NULL)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Tests (native - no JsValue)
 // ─────────────────────────────────────────────────────────────────────────────
 

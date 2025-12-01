@@ -1,6 +1,15 @@
-//! SVG path parsing utilities
+//! SVG path parsing and boolean operations
 //!
-//! Shared path bounds calculation used by both WASM and native renderers.
+//! - Bounding box calculation for all SVG path commands
+//! - Boolean operations (union, intersection, difference, xor) using sweep-line algorithm
+//! - Path flattening for curves to line segments
+
+pub mod boolean;
+
+pub use boolean::{
+    BoolOp, BoolResult, Point, Polygon, PolygonClipper, Segment, SweepLine,
+    flatten_path, path_boolean, segment_intersection,
+};
 
 /// Parse SVG path d attribute and compute bounding box (x, y, width, height)
 pub fn parse_path_bounds(d: &str) -> (f32, f32, f32, f32) {
