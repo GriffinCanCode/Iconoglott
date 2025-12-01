@@ -1,7 +1,9 @@
 """Tests for DSL interpreter."""
 
 import pytest
-from lang import Lexer, Parser, Interpreter
+from lang.lexer import Lexer
+from lang.parser import Parser
+from lang.eval import Interpreter
 from lang.types import TokenType
 
 

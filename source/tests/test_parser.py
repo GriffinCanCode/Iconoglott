@@ -3,7 +3,8 @@
 import pytest
 from hypothesis import given, strategies as st, assume, settings
 
-from lang import Lexer, Parser
+from lang.lexer import Lexer
+from lang.parser import Parser
 from lang.types import TokenType
 
 

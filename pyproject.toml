@@ -14,6 +14,8 @@ dependencies = [
 dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "hypothesis>=6.92.0",
     "httpx>=0.25.0",
     "maturin>=1.4,<2.0",
 ]
@@ -29,3 +31,18 @@ packages = ["source/lang", "source/server"]
 asyncio_mode = "auto"
 testpaths = ["source/tests"]
 pythonpath = ["source"]
+addopts = "-v --tb=short"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["source/lang", "source/server"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
+fail_under = 80
