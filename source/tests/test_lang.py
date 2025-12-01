@@ -46,11 +46,10 @@ class TestParser:
     """Test Rust parser via Python bindings."""
     
     def _parse(self, source: str):
-        import json
         lexer = rust.Lexer(source)
         tokens = lexer.py_tokenize()
         parser = rust.Parser(tokens)
-        return json.loads(parser.parse_json())
+        return parser.parse_py()
     
     def test_parse_canvas(self):
         ast = self._parse("canvas 800x600 fill #000")
@@ -63,8 +62,8 @@ class TestParser:
         ast = self._parse("rect at 100,200 size 50x30")
         shape = ast['Scene'][0]['Shape']
         assert shape['kind'] == "rect"
-        assert shape['props']['at']['Pair'] == [100.0, 200.0]
-        assert shape['props']['size']['Pair'] == [50.0, 30.0]
+        assert shape['props']['at'] == (100.0, 200.0)
+        assert shape['props']['size'] == (50.0, 30.0)
 
     def test_parse_variable(self):
         ast = self._parse("$color = #f00\nrect $color")
@@ -72,7 +71,7 @@ class TestParser:
         assert 'Variable' in ast['Scene'][0]
         # Shape should have fill resolved
         shape = ast['Scene'][1]['Shape']
-        assert shape['props']['fill']['Str'] == "#f00"
+        assert shape['props']['fill'] == "#f00"
 
     def test_parse_nested_style(self):
         source = """rect at 10,10 size 100x50
