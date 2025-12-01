@@ -273,7 +273,7 @@ impl ParseError {
 
 lazy_static::lazy_static! {
     static ref SHAPES: HashSet<&'static str> = {
-        ["rect", "circle", "ellipse", "line", "path", "polygon", "text", "image"]
+        ["rect", "circle", "ellipse", "line", "path", "polygon", "text", "image", "arc", "curve"]
             .into_iter().collect()
     };
     static ref STYLE_PROPS: HashSet<&'static str> = {
@@ -622,6 +622,31 @@ impl Parser {
                                     shape.props.insert("href".into(), PropValue::Str(s.clone()));
                                 }
                             }
+                        }
+                        // Arc properties
+                        "start" if self.matches(&[TokenType::Number]) => {
+                            if let Some(t) = self.advance() {
+                                if let TokenValue::Num(n) = t.value {
+                                    shape.props.insert("start".into(), PropValue::Num(n));
+                                }
+                            }
+                        }
+                        "end" if self.matches(&[TokenType::Number]) => {
+                            if let Some(t) = self.advance() {
+                                if let TokenValue::Num(n) = t.value {
+                                    shape.props.insert("end".into(), PropValue::Num(n));
+                                }
+                            }
+                        }
+                        // Curve properties
+                        "smooth" => {
+                            shape.props.insert("smooth".into(), PropValue::Num(1.0));
+                        }
+                        "sharp" => {
+                            shape.props.insert("smooth".into(), PropValue::Num(0.0));
+                        }
+                        "closed" => {
+                            shape.props.insert("closed".into(), PropValue::Num(1.0));
                         }
                         _ => {}
                     }
@@ -1239,6 +1264,50 @@ mod tests {
         let ast = parse_source("$accent = #ff0\ncircle $accent");
         if let AstNode::Scene(children) = ast {
             assert!(matches!(&children[0], AstNode::Variable { .. }));
+        }
+    }
+
+    #[test]
+    fn test_arc() {
+        let ast = parse_source("arc at 200,200 radius 50 start 0 end 180");
+        if let AstNode::Scene(children) = ast {
+            if let AstNode::Shape(s) = &children[0] {
+                assert_eq!(s.kind, "arc");
+                assert!(matches!(s.props.get("at"), Some(PropValue::Pair(a, b)) if (*a - 200.0).abs() < 0.001 && (*b - 200.0).abs() < 0.001));
+                assert!(matches!(s.props.get("radius"), Some(PropValue::Num(n)) if (*n - 50.0).abs() < 0.001));
+                assert!(matches!(s.props.get("start"), Some(PropValue::Num(n)) if n.abs() < 0.001));
+                assert!(matches!(s.props.get("end"), Some(PropValue::Num(n)) if (*n - 180.0).abs() < 0.001));
+            } else {
+                panic!("Expected Shape");
+            }
+        }
+    }
+
+    #[test]
+    fn test_curve() {
+        let ast = parse_source("curve points [100,100 150,50 200,100] smooth");
+        if let AstNode::Scene(children) = ast {
+            if let AstNode::Shape(s) = &children[0] {
+                assert_eq!(s.kind, "curve");
+                assert!(matches!(s.props.get("points"), Some(PropValue::Points(pts)) if pts.len() == 3));
+                assert!(matches!(s.props.get("smooth"), Some(PropValue::Num(n)) if (*n - 1.0).abs() < 0.001));
+            } else {
+                panic!("Expected Shape");
+            }
+        }
+    }
+
+    #[test]
+    fn test_curve_sharp() {
+        let ast = parse_source("curve points [0,0 50,50 100,0] sharp closed");
+        if let AstNode::Scene(children) = ast {
+            if let AstNode::Shape(s) = &children[0] {
+                assert_eq!(s.kind, "curve");
+                assert!(matches!(s.props.get("smooth"), Some(PropValue::Num(n)) if n.abs() < 0.001));
+                assert!(matches!(s.props.get("closed"), Some(PropValue::Num(n)) if (*n - 1.0).abs() < 0.001));
+            } else {
+                panic!("Expected Shape");
+            }
         }
     }
 }
