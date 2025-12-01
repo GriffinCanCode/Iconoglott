@@ -18,7 +18,7 @@ iconoglott/
 ### Canvas
 
 ```
-canvas 800x600 fill #1a1a2e
+canvas giant fill #1a1a2e
 ```
 
 ### Variables
@@ -118,7 +118,7 @@ row horizontal gap 10 at 50,200
 ```
 // Complete example with all features
 
-canvas 800x600 fill #1a1a2e
+canvas giant fill #1a1a2e
 
 $accent = #e94560
 $teal = #4ecdc4

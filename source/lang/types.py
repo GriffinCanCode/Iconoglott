@@ -10,7 +10,7 @@ from typing import Union
 # Re-export Rust types directly
 try:
     from iconoglott_core import (
-        TokenType, Token,
+        TokenType, Token, CanvasSize,
         AstStyle, AstTransform, AstCanvas, AstShape,
         ShadowDef, GradientDef, ParseError as RustParseError,
     )
@@ -18,6 +18,13 @@ except ImportError:
     # Fallback for when Rust core isn't built (e.g., during type checking)
     TokenType = None  # type: ignore
     Token = None  # type: ignore
+    CanvasSize = None  # type: ignore
+
+# Standard canvas sizes (10-tier system)
+CANVAS_SIZES = {
+    "nano": 16, "micro": 24, "tiny": 32, "small": 48, "medium": 64,
+    "large": 96, "xlarge": 128, "huge": 192, "massive": 256, "giant": 512,
+}
 
 from .errors import ErrorInfo, ErrorCode
 
@@ -53,10 +60,17 @@ class Transform:
 
 @dataclass(slots=True)
 class Canvas:
-    """Canvas definition. Wraps Rust AstCanvas."""
-    width: int = 800
-    height: int = 600
+    """Canvas definition using standardized sizes. Wraps Rust AstCanvas."""
+    size: str = "medium"  # nano|micro|tiny|small|medium|large|xlarge|huge|massive|giant
     fill: str = "#fff"
+    
+    @property
+    def width(self) -> int:
+        return CANVAS_SIZES.get(self.size, 64)
+    
+    @property
+    def height(self) -> int:
+        return CANVAS_SIZES.get(self.size, 64)
 
 
 @dataclass(slots=True)

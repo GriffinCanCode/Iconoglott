@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import dataclass, field
-from .types import Node, Canvas, Shape, Style, Transform
+from .types import Node, Canvas, Shape, Style, Transform, CANVAS_SIZES
 from .errors import ErrorCode, ErrorInfo, ErrorList, RenderError
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,11 @@ class SceneState:
     def to_svg(self) -> str:
         """Render scene to SVG using Rust core."""
         try:
-            scene = rust.Scene(self.canvas.width, self.canvas.height, self.canvas.fill)
+            # Get CanvasSize enum from Rust
+            size = getattr(rust.CanvasSize, self.canvas.size.capitalize(), None)
+            if size is None:
+                size = rust.CanvasSize.from_name(self.canvas.size) or rust.CanvasSize.Medium
+            scene = rust.Scene(size, self.canvas.fill)
             
             # Add shapes first (this populates _gradients and _filters)
             for s in self.shapes:
@@ -278,7 +282,7 @@ class Interpreter:
                 self._eval_ast(child)
         elif 'Canvas' in ast:
             c = ast['Canvas']
-            self.state.canvas = Canvas(c['width'], c['height'], c['fill'])
+            self.state.canvas = Canvas(size=c.get('size', 'medium'), fill=c['fill'])
         elif 'Shape' in ast:
             self._add_shape(ast['Shape'])
         elif 'Variable' in ast:

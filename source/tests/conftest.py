@@ -23,13 +23,13 @@ def snapshot_dir():
 @pytest.fixture
 def basic_canvas_source():
     """Basic canvas DSL source."""
-    return "canvas 800x600 fill #1a1a2e"
+    return "canvas giant fill #1a1a2e"
 
 
 @pytest.fixture
 def rect_source():
     """Rectangle DSL source."""
-    return """canvas 400x300
+    return """canvas massive
 rect at 10,10 size 100x50
   fill #e94560"""
 
@@ -37,7 +37,7 @@ rect at 10,10 size 100x50
 @pytest.fixture
 def complex_scene_source():
     """Complex scene with multiple shapes."""
-    return """canvas 800x600 fill #1a1a2e
+    return """canvas giant fill #1a1a2e
 $primary = #e94560
 $secondary = #16213e
 
@@ -58,7 +58,7 @@ text at 100,250 "Hello World"
 @pytest.fixture
 def transform_source():
     """Source with transforms."""
-    return """canvas 400x400
+    return """canvas massive
 rect at 200,200 size 100x100
   fill #f00
   rotate 45

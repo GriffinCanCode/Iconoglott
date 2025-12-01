@@ -46,7 +46,7 @@ export interface IconoglottClient {
  * })
  * 
  * // Send DSL to render (debounced automatically)
- * client.send(`canvas 400x300 fill #1a1a2e`)
+ * client.send(`canvas massive fill #1a1a2e`)
  * 
  * // Cleanup
  * client.disconnect()

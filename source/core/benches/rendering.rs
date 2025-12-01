@@ -10,7 +10,7 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
 use iconoglott_core::{
-    Lexer, Parser, AstNode,
+    Lexer, Parser, AstNode, CanvasSize,
     Scene, Element, Rect, Circle, Style,
     IndexedScene, render,
 };
@@ -51,7 +51,7 @@ fn make_circle(i: usize) -> Circle {
 }
 
 fn build_scene_with_n_elements(n: usize) -> Scene {
-    let mut scene = Scene::new_internal(800, 600, "#1a1a2e".into());
+    let mut scene = Scene::new(CanvasSize::Giant, "#1a1a2e".into());
     for i in 0..n {
         if i % 2 == 0 {
             scene.push(Element::Rect(make_rect(i)));
@@ -64,7 +64,7 @@ fn build_scene_with_n_elements(n: usize) -> Scene {
 
 fn generate_dsl_source(n: usize) -> String {
     let mut src = String::with_capacity(n * 40);
-    src.push_str("canvas 800x600 fill #1a1a2e\n");
+    src.push_str("canvas giant fill #1a1a2e\n");
     for i in 0..n {
         let x = (i % 100) * 10;
         let y = (i / 100) * 10;
@@ -316,7 +316,7 @@ fn bench_diff_all_changed(c: &mut Criterion) {
         let scene1 = build_scene_with_n_elements(*count);
         
         // Different scene with all different elements (shifted positions)
-        let mut scene2 = Scene::new_internal(800, 600, "#1a1a2e".into());
+        let mut scene2 = Scene::new(CanvasSize::Giant, "#1a1a2e".into());
         for i in 0..*count {
             scene2.push(Element::Rect(Rect {
                 x: ((i % 100) as f32 * 10.0) + 5.0, // slightly offset

@@ -13,7 +13,7 @@ Python provides:
 Example:
     >>> from lang import render
     >>> svg = render('''
-    ...     canvas 400x300 fill #1a1a2e
+    ...     canvas massive fill #1a1a2e
     ...     circle at 200,150 radius 50
     ...       fill #e94560
     ... ''')

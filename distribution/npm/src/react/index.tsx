@@ -36,7 +36,7 @@ export interface IconoglottCanvasProps {
  * import { IconoglottCanvas } from '@iconoglott/renderer/react'
  * 
  * function Editor() {
- *   const [code, setCode] = useState('canvas 400x300 fill #1a1a2e')
+ *   const [code, setCode] = useState('canvas massive fill #1a1a2e')
  *   const [connected, setConnected] = useState(false)
  * 
  *   return (
@@ -145,7 +145,7 @@ export interface UseIconoglottReturn {
  * 
  *   return (
  *     <div>
- *       <button onClick={() => render('canvas 400x300 fill #1a1a2e')}>
+ *       <button onClick={() => render('canvas massive fill #1a1a2e')}>
  *         Render
  *       </button>
  *       <span>{connected ? 'Connected' : 'Disconnected'}</span>

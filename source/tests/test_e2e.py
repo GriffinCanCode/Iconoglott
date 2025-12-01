@@ -12,7 +12,7 @@ class TestE2ERoundtrip:
 
     def test_basic_scene_renders(self):
         """Basic scene should render without errors."""
-        source = """canvas 800x600 fill #1a1a2e
+        source = """canvas giant fill #1a1a2e
 rect at 50,50 size 200x100
   fill #e94560
   corner 8"""
@@ -24,7 +24,7 @@ rect at 50,50 size 200x100
 
     def test_complex_scene_renders(self):
         """Complex scene with multiple elements should render."""
-        source = """canvas 800x600 fill #1a1a2e
+        source = """canvas giant fill #1a1a2e
 $primary = #e94560
 $secondary = #16213e
 
@@ -70,7 +70,7 @@ group "rotated"
 
     def test_gradient_renders_in_defs(self):
         """Gradients should render in defs section."""
-        source = """canvas 400x400
+        source = """canvas massive
 rect at 50,50 size 300x300
   gradient linear #f00 #00f 45"""
         state = Interpreter().eval(source)
@@ -81,7 +81,7 @@ rect at 50,50 size 300x300
 
     def test_filter_renders_in_defs(self):
         """Filters (shadows) should render in defs section."""
-        source = """canvas 400x400
+        source = """canvas massive
 rect at 50,50 size 300x300
   fill #e94560
   shadow 4,4 10 #0008"""
@@ -92,7 +92,7 @@ rect at 50,50 size 300x300
 
     def test_layout_positions_children(self):
         """Stack/row layouts should position children correctly."""
-        source = """canvas 400x400
+        source = """canvas massive
 stack at 50,50 gap 20
   rect size 100x50
     fill #f00
@@ -107,7 +107,7 @@ stack at 50,50 gap 20
 
     def test_transform_applied(self):
         """Transforms should be applied to SVG elements."""
-        source = """canvas 200x200
+        source = """canvas huge
 rect at 100,100 size 50x50
   fill #f00
   rotate 45
@@ -122,14 +122,14 @@ class TestE2EValidSVG:
     """Tests that output is valid SVG."""
 
     def test_svg_has_namespace(self):
-        source = "canvas 100x100"
+        source = "canvas large"
         state = Interpreter().eval(source)
         svg = state.to_svg()
         assert 'xmlns="http://www.w3.org/2000/svg"' in svg
 
     def test_svg_is_well_formed(self):
         """SVG should be well-formed XML (basic check)."""
-        source = """canvas 400x300
+        source = """canvas massive
 rect at 0,0 size 100x100
   fill #f00
 text at 50,50 "Test"
@@ -182,7 +182,7 @@ class TestE2EPropertyBased:
     @settings(max_examples=20)
     def test_rect_roundtrip(self, x, y, w, h, corner):
         """Rect properties should roundtrip through SVG."""
-        source = f"""canvas 800x600
+        source = f"""canvas giant
 rect at {x},{y} size {w}x{h}
   fill #f00
   corner {corner}"""
@@ -201,7 +201,7 @@ rect at {x},{y} size {w}x{h}
     @settings(max_examples=20)
     def test_circle_roundtrip(self, cx, cy, r):
         """Circle properties should roundtrip through SVG."""
-        source = f"""canvas 800x600
+        source = f"""canvas giant
 circle at {cx},{cy} radius {r}
   fill #0f0"""
         state = Interpreter().eval(source)
@@ -223,7 +223,7 @@ circle at {cx},{cy} radius {r}
     def test_polygon_roundtrip(self, points):
         """Polygon points should roundtrip through SVG."""
         points_str = " ".join(f"{x},{y}" for x, y in points)
-        source = f"""canvas 500x500
+        source = f"""canvas giant
 polygon points [{points_str}]
   fill #ff0"""
         state = Interpreter().eval(source)
@@ -237,16 +237,16 @@ class TestE2ERustIntegration:
 
     def test_rust_scene_creation(self):
         """Rust Scene should be created correctly."""
-        source = "canvas 800x600 fill #1a1a2e"
+        source = "canvas giant fill #1a1a2e"
         state = Interpreter().eval(source)
         svg = state.to_svg()
         assert '<svg' in svg
-        assert 'width="800"' in svg
-        assert 'height="600"' in svg
+        assert 'width="512"' in svg
+        assert 'height="512"' in svg
 
     def test_rust_shape_rendering(self):
         """Shapes should be rendered by Rust core."""
-        source = """canvas 400x300
+        source = """canvas massive
 rect at 10,10 size 100x100
   fill #e94560
 circle at 200,200 radius 50
@@ -259,7 +259,7 @@ circle at 200,200 radius 50
 
     def test_rust_gradient_rendering(self):
         """Gradients should be rendered by Rust core."""
-        source = """canvas 400x300
+        source = """canvas massive
 rect at 0,0 size 400x300
   gradient linear #e94560 #16213e"""
         state = Interpreter().eval(source)
@@ -268,7 +268,7 @@ rect at 0,0 size 400x300
 
     def test_rust_filter_rendering(self):
         """Filters should be rendered by Rust core."""
-        source = """canvas 400x300
+        source = """canvas massive
 rect at 50,50 size 300x200
   fill #e94560
   shadow 4,4 8 #0008"""
@@ -288,18 +288,19 @@ class TestE2EEdgeCases:
         assert '</svg>' in svg
 
     def test_very_large_coordinates(self):
-        """Large coordinates should work."""
-        source = """canvas 10000x10000
+        """Large coordinates should work (shapes can extend beyond canvas)."""
+        source = """canvas giant
 rect at 5000,5000 size 1000x1000
   fill #f00"""
         state = Interpreter().eval(source)
         svg = state.to_svg()
-        assert 'width="10000"' in svg
+        assert 'width="512"' in svg
         assert '<rect' in svg
+        assert 'x="5000"' in svg
 
     def test_zero_dimensions(self):
         """Zero-size shapes should still render."""
-        source = """canvas 100x100
+        source = """canvas large
 rect at 10,10 size 0x0
   fill #f00"""
         state = Interpreter().eval(source)
@@ -309,7 +310,7 @@ rect at 10,10 size 0x0
 
     def test_negative_coordinates(self):
         """Negative coordinates should work."""
-        source = """canvas 400x300
+        source = """canvas massive
 rect at -50,-50 size 100x100
   fill #f00"""
         state = Interpreter().eval(source)
@@ -322,7 +323,7 @@ rect at -50,-50 size 100x100
             f"rect at {i*10},{i*5} size 20x20\n  fill #f00"
             for i in range(50)
         ])
-        source = f"canvas 800x600\n{shapes}"
+        source = f"canvas giant\n{shapes}"
         state = Interpreter().eval(source)
         svg = state.to_svg()
         # Should have many rects

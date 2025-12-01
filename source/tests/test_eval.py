@@ -10,18 +10,20 @@ class TestInterpreterBasics:
     def test_empty_source(self):
         """Empty source returns default state."""
         state = Interpreter().eval("")
-        assert state.canvas.width == 800
-        assert state.canvas.height == 600
+        assert state.canvas.size == "medium"
+        assert state.canvas.width == 64
+        assert state.canvas.height == 64
 
     def test_canvas_only(self):
         """Canvas-only source sets dimensions."""
-        state = Interpreter().eval("canvas 800x600")
-        assert state.canvas.width == 800
-        assert state.canvas.height == 600
+        state = Interpreter().eval("canvas giant")
+        assert state.canvas.size == "giant"
+        assert state.canvas.width == 512
+        assert state.canvas.height == 512
 
     def test_canvas_with_fill(self):
         """Canvas with fill color."""
-        state = Interpreter().eval("canvas 400x300 fill #123")
+        state = Interpreter().eval("canvas massive fill #123")
         assert state.canvas.fill == "#123"
 
 
@@ -31,7 +33,7 @@ class TestInterpreterShapes:
     def test_rect_basic(self):
         """Basic rect evaluation."""
         state = Interpreter().eval("""
-canvas 400x300
+canvas massive
 rect size 100x80 at 10,20
 """)
         assert len(state.shapes) == 1
@@ -42,7 +44,7 @@ rect size 100x80 at 10,20
     def test_circle_basic(self):
         """Basic circle evaluation."""
         state = Interpreter().eval("""
-canvas 400x300
+canvas massive
 circle radius 50 at 100,100
 """)
         assert len(state.shapes) == 1
@@ -52,7 +54,7 @@ circle radius 50 at 100,100
     def test_ellipse_basic(self):
         """Basic ellipse evaluation."""
         state = Interpreter().eval("""
-canvas 400x300
+canvas massive
 ellipse radius 50,30 at 100,100
 """)
         assert len(state.shapes) == 1
@@ -62,7 +64,7 @@ ellipse radius 50,30 at 100,100
     def test_line_basic(self):
         """Basic line evaluation."""
         state = Interpreter().eval("""
-canvas 400x300
+canvas massive
 line from 0,0 to 100,100
 """)
         assert len(state.shapes) == 1
@@ -71,7 +73,7 @@ line from 0,0 to 100,100
     def test_path_basic(self):
         """Basic path evaluation."""
         state = Interpreter().eval("""
-canvas 400x300
+canvas massive
 path "M0 0 L100 100"
 """)
         assert len(state.shapes) == 1
@@ -80,7 +82,7 @@ path "M0 0 L100 100"
     def test_polygon_basic(self):
         """Basic polygon evaluation."""
         state = Interpreter().eval("""
-canvas 400x300
+canvas massive
 polygon [0,0 100,0 50,100]
 """)
         assert len(state.shapes) == 1
@@ -89,7 +91,7 @@ polygon [0,0 100,0 50,100]
     def test_text_basic(self):
         """Basic text evaluation."""
         state = Interpreter().eval("""
-canvas 400x300
+canvas massive
 text "Hello" at 50,50
 """)
         assert len(state.shapes) == 1
@@ -99,7 +101,7 @@ text "Hello" at 50,50
     def test_image_basic(self):
         """Basic image evaluation."""
         state = Interpreter().eval("""
-canvas 400x300
+canvas massive
 image href "test.png" size 100x80 at 10,20
 """)
         assert len(state.shapes) == 1
@@ -113,7 +115,7 @@ class TestInterpreterStyles:
     def test_fill_style(self):
         """Fill style on shape."""
         state = Interpreter().eval("""
-canvas 400x300
+canvas massive
 rect 100x80
     fill #f00
 """)
@@ -122,7 +124,7 @@ rect 100x80
     def test_stroke_style(self):
         """Stroke style on shape."""
         state = Interpreter().eval("""
-canvas 400x300
+canvas massive
 rect 100x80
     stroke #00f 2
 """)
@@ -132,7 +134,7 @@ rect 100x80
     def test_opacity_style(self):
         """Opacity style on shape."""
         state = Interpreter().eval("""
-canvas 400x300
+canvas massive
 rect 100x80
     opacity 0.5
 """)
@@ -141,7 +143,7 @@ rect 100x80
     def test_gradient_style(self):
         """Gradient style on shape."""
         state = Interpreter().eval("""
-canvas 400x300
+canvas massive
 rect 100x80
     gradient linear #f00 -> #00f
 """)
@@ -150,7 +152,7 @@ rect 100x80
     def test_shadow_style(self):
         """Shadow style on shape."""
         state = Interpreter().eval("""
-canvas 400x300
+canvas massive
 rect 100x80
     shadow 2,4 8 #0004
 """)
@@ -163,20 +165,20 @@ class TestInterpreterSVG:
     def test_to_svg_basic(self):
         """Basic SVG output."""
         state = Interpreter().eval("""
-canvas 400x300 #1a1a2e
+canvas massive #1a1a2e
 rect 100x80 at 50,50
     fill #f00
 """)
         svg = state.to_svg()
         assert '<svg' in svg
-        assert 'width="400"' in svg
-        assert 'height="300"' in svg
+        assert 'width="256"' in svg
+        assert 'height="256"' in svg
         assert '<rect' in svg
 
     def test_to_svg_circle(self):
         """Circle SVG output."""
         state = Interpreter().eval("""
-canvas 200x200
+canvas huge
 circle r50 at 100,100
     fill #0f0
 """)
@@ -187,7 +189,7 @@ circle r50 at 100,100
     def test_to_svg_ellipse(self):
         """Ellipse SVG output."""
         state = Interpreter().eval("""
-canvas 200x200
+canvas huge
 ellipse r80x40 at 100,100
     fill #00f
 """)
@@ -198,7 +200,7 @@ ellipse r80x40 at 100,100
     def test_to_svg_text(self):
         """Text SVG output."""
         state = Interpreter().eval("""
-canvas 200x200
+canvas huge
 text "Test" at 20,50
     font "Arial" 20
 """)
@@ -209,7 +211,7 @@ text "Test" at 20,50
     def test_to_svg_line(self):
         """Line SVG output."""
         state = Interpreter().eval("""
-canvas 200x200
+canvas huge
 line 10,10 -> 190,190
     stroke #f00 2
 """)
@@ -219,7 +221,7 @@ line 10,10 -> 190,190
     def test_to_svg_path(self):
         """Path SVG output."""
         state = Interpreter().eval("""
-canvas 200x200
+canvas huge
 path "M10 10 L190 10 L100 180 Z"
     fill #f0f
 """)
@@ -229,7 +231,7 @@ path "M10 10 L190 10 L100 180 Z"
     def test_to_svg_polygon(self):
         """Polygon SVG output."""
         state = Interpreter().eval("""
-canvas 200x200
+canvas huge
 polygon [10,10 190,10 100,180]
     fill #ff0
 """)
@@ -239,7 +241,7 @@ polygon [10,10 190,10 100,180]
     def test_to_svg_gradient(self):
         """Gradient defs in SVG."""
         state = Interpreter().eval("""
-canvas 200x200
+canvas huge
 rect 180x180 at 10,10
     gradient linear #f00 -> #00f 45
 """)
@@ -250,7 +252,7 @@ rect 180x180 at 10,10
     def test_to_svg_shadow(self):
         """Shadow filter in SVG."""
         state = Interpreter().eval("""
-canvas 200x200
+canvas huge
 rect 100x100 at 50,50
     shadow 2,4 8 #0006
 """)
@@ -351,7 +353,7 @@ class TestLayout:
     def test_stack_layout(self):
         """Vertical stack layout."""
         state = Interpreter().eval("""
-canvas 400x400
+canvas massive
 stack gap 10 at 20,20
     rect 80x40
     rect 80x40
@@ -364,7 +366,7 @@ stack gap 10 at 20,20
     def test_row_layout(self):
         """Horizontal row layout."""
         state = Interpreter().eval("""
-canvas 400x200
+canvas massive
 row gap 10 at 20,20
     circle r20
     circle r20

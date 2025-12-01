@@ -153,7 +153,7 @@ function astShapeToDict(shape: AstShape): Record<string, unknown> {
  * await initWasm()
  * 
  * const svg = render(`
- *   canvas 400x300 fill #1a1a2e
+ *   canvas massive fill #1a1a2e
  *   circle at 200,150 radius 50
  *     fill #e94560
  * `)
@@ -164,7 +164,7 @@ export function render(source: string): string {
   const { ast, errors } = parse(source);
   
   // Extract canvas and shapes from AST
-  let canvas: Canvas = { width: 800, height: 600, fill: '#fff' };
+  let canvas: Canvas = { size: 'medium', fill: '#fff', width: 64, height: 64 };
   const shapes: Record<string, unknown>[] = [];
   
   const nodes = ast.Scene ?? [ast];

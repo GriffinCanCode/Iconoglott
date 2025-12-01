@@ -9,7 +9,7 @@ class TestLexer:
     """Test Rust lexer via Python bindings."""
     
     def test_tokenize_canvas(self):
-        lexer = rust.Lexer("canvas 800x600")
+        lexer = rust.Lexer("canvas giant")
         tokens = lexer.py_tokenize()
         assert tokens[0].ttype == rust.TokenType.Ident
         assert tokens[0].value == "canvas"
@@ -52,10 +52,11 @@ class TestParser:
         return parser.parse_py()
     
     def test_parse_canvas(self):
-        ast = self._parse("canvas 800x600 fill #000")
+        ast = self._parse("canvas giant fill #000")
         canvas = ast['Scene'][0]['Canvas']
-        assert canvas['width'] == 800
-        assert canvas['height'] == 600
+        assert canvas['size'] == 'giant'
+        assert canvas['width'] == 512
+        assert canvas['height'] == 512
         assert canvas['fill'] == "#000"
 
     def test_parse_shape_at(self):
@@ -90,13 +91,14 @@ class TestInterpreter:
     """Test full evaluation pipeline."""
     
     def test_eval_canvas(self):
-        state = Interpreter().eval("canvas 400x300 fill #1a1a2e")
-        assert state.canvas.width == 400
-        assert state.canvas.height == 300
+        state = Interpreter().eval("canvas massive fill #1a1a2e")
+        assert state.canvas.size == "massive"
+        assert state.canvas.width == 256
+        assert state.canvas.height == 256
         assert state.canvas.fill == "#1a1a2e"
 
     def test_eval_rect(self):
-        source = """canvas 400x300
+        source = """canvas massive
 rect at 10,10 size 100x50
   fill #f00"""
         state = Interpreter().eval(source)
@@ -111,7 +113,7 @@ rect at 10,10 size 100x50
         assert state.shapes[0]['props']['radius'] == 50.0
 
     def test_to_svg_basic(self):
-        source = "canvas 100x100\nrect at 0,0 size 50x50\n  fill #fff"
+        source = "canvas large\nrect at 0,0 size 50x50\n  fill #fff"
         state = Interpreter().eval(source)
         svg = state.to_svg()
         assert '<svg' in svg

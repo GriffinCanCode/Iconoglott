@@ -354,6 +354,208 @@ impl Image {
 fn html_escape(s: &str) -> String { s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;") }
 #[inline] fn transform_attr(tf: &Option<String>) -> String { tf.as_ref().map_or(String::new(), |t| format!(r#" transform="{}""#, t)) }
 
+/// Diamond primitive (rotated rect for flowcharts)
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "python", pyclass(get_all, set_all))]
+pub struct Diamond {
+    pub cx: f32, pub cy: f32, pub w: f32, pub h: f32,
+    pub style: Style, pub transform: Option<String>,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl Diamond {
+    #[new]
+    #[pyo3(signature = (cx, cy, w, h, style=None, transform=None))]
+    fn py_new(cx: f32, cy: f32, w: f32, h: f32, style: Option<Style>, transform: Option<String>) -> Self {
+        Self { cx, cy, w, h, style: style.unwrap_or_default(), transform }
+    }
+}
+
+impl Diamond {
+    pub fn to_svg(&self) -> String {
+        let pts = format!("{},{} {},{} {},{} {},{}",
+            self.cx, self.cy - self.h / 2.0,
+            self.cx + self.w / 2.0, self.cy,
+            self.cx, self.cy + self.h / 2.0,
+            self.cx - self.w / 2.0, self.cy);
+        format!(r#"<polygon points="{}"{}{}/>"#, pts, self.style.to_svg_attrs(), transform_attr(&self.transform))
+    }
+    pub fn bounds(&self) -> (f32, f32, f32, f32) { (self.cx - self.w / 2.0, self.cy - self.h / 2.0, self.w, self.h) }
+}
+
+/// Node for graph/flowchart (composite: shape + label)
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "python", pyclass(get_all, set_all))]
+pub struct Node {
+    pub id: String,
+    pub shape: String,  // rect, circle, ellipse, diamond
+    pub cx: f32, pub cy: f32, pub w: f32, pub h: f32,
+    pub label: Option<String>,
+    pub style: Style,
+    pub label_style: Style,
+    pub transform: Option<String>,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl Node {
+    #[new]
+    #[pyo3(signature = (id, shape="rect".to_string(), cx=0.0, cy=0.0, w=80.0, h=40.0, label=None, style=None, transform=None))]
+    fn py_new(id: String, shape: String, cx: f32, cy: f32, w: f32, h: f32, label: Option<String>, style: Option<Style>, transform: Option<String>) -> Self {
+        Self { id, shape, cx, cy, w, h, label, style: style.unwrap_or_default(), label_style: Style::default(), transform }
+    }
+}
+
+impl Node {
+    pub fn to_svg(&self) -> String {
+        let shape_svg = match self.shape.as_str() {
+            "circle" => {
+                let r = self.w.min(self.h) / 2.0;
+                format!(r#"<circle cx="{}" cy="{}" r="{}"{}/>"#, self.cx, self.cy, r, self.style.to_svg_attrs())
+            }
+            "ellipse" => {
+                format!(r#"<ellipse cx="{}" cy="{}" rx="{}" ry="{}"{}/>"#, self.cx, self.cy, self.w / 2.0, self.h / 2.0, self.style.to_svg_attrs())
+            }
+            "diamond" => {
+                let pts = format!("{},{} {},{} {},{} {},{}",
+                    self.cx, self.cy - self.h / 2.0,
+                    self.cx + self.w / 2.0, self.cy,
+                    self.cx, self.cy + self.h / 2.0,
+                    self.cx - self.w / 2.0, self.cy);
+                format!(r#"<polygon points="{}"{}/>"#, pts, self.style.to_svg_attrs())
+            }
+            _ => { // rect
+                let x = self.cx - self.w / 2.0;
+                let y = self.cy - self.h / 2.0;
+                format!(r#"<rect x="{}" y="{}" width="{}" height="{}"{}/>"#, x, y, self.w, self.h, self.style.to_svg_attrs())
+            }
+        };
+        
+        let label_svg = self.label.as_ref().map_or(String::new(), |lbl| {
+            let fill = self.label_style.fill.as_deref().unwrap_or("#000");
+            format!(r#"<text x="{}" y="{}" text-anchor="middle" dominant-baseline="middle" fill="{}">{}</text>"#, 
+                self.cx, self.cy, fill, html_escape(lbl))
+        });
+        
+        format!(r#"<g id="node-{}"{}>{}{}</g>"#, html_escape(&self.id), transform_attr(&self.transform), shape_svg, label_svg)
+    }
+    
+    pub fn bounds(&self) -> (f32, f32, f32, f32) { (self.cx - self.w / 2.0, self.cy - self.h / 2.0, self.w, self.h) }
+    
+    /// Get anchor point for edges (center of specified side)
+    pub fn anchor(&self, side: &str) -> (f32, f32) {
+        match side {
+            "top" | "n" => (self.cx, self.cy - self.h / 2.0),
+            "bottom" | "s" => (self.cx, self.cy + self.h / 2.0),
+            "left" | "w" => (self.cx - self.w / 2.0, self.cy),
+            "right" | "e" => (self.cx + self.w / 2.0, self.cy),
+            _ => (self.cx, self.cy), // center
+        }
+    }
+}
+
+/// Edge style enumeration
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EdgeStyle { Straight, Curved, Orthogonal }
+
+impl Default for EdgeStyle {
+    fn default() -> Self { Self::Straight }
+}
+
+/// Arrow type enumeration
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ArrowType { None, Forward, Backward, Both }
+
+impl Default for ArrowType {
+    fn default() -> Self { Self::Forward }
+}
+
+/// Edge/connector between nodes
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "python", pyclass(get_all, set_all))]
+pub struct Edge {
+    pub from_id: String,
+    pub to_id: String,
+    pub from_pt: (f32, f32),
+    pub to_pt: (f32, f32),
+    pub edge_style: String,
+    pub arrow: String,
+    pub label: Option<String>,
+    pub style: Style,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl Edge {
+    #[new]
+    #[pyo3(signature = (from_id, to_id, from_pt, to_pt, edge_style="straight".to_string(), arrow="forward".to_string(), label=None, style=None))]
+    fn py_new(from_id: String, to_id: String, from_pt: (f32, f32), to_pt: (f32, f32), edge_style: String, arrow: String, label: Option<String>, style: Option<Style>) -> Self {
+        let mut s = style.unwrap_or_default();
+        if s.stroke.is_none() { s.stroke = Some("#333".into()); }
+        if s.stroke_width == 0.0 { s.stroke_width = 2.0; }
+        Self { from_id, to_id, from_pt, to_pt, edge_style, arrow, label, style: s }
+    }
+}
+
+impl Edge {
+    pub fn to_svg(&self, marker_ids: (&str, &str)) -> String {
+        let (x1, y1) = self.from_pt;
+        let (x2, y2) = self.to_pt;
+        let stroke = self.style.stroke.as_deref().unwrap_or("#333");
+        
+        let path_d = match self.edge_style.as_str() {
+            "curved" => {
+                let mx = (x1 + x2) / 2.0;
+                let my = (y1 + y2) / 2.0;
+                let dx = (x2 - x1).abs();
+                let dy = (y2 - y1).abs();
+                let ctrl_offset = (dx.max(dy)) * 0.3;
+                if (y2 - y1).abs() > (x2 - x1).abs() {
+                    format!("M{},{} C{},{} {},{} {},{}", x1, y1, x1, my, x2, my, x2, y2)
+                } else {
+                    format!("M{},{} C{},{} {},{} {},{}", x1, y1, mx, y1 + ctrl_offset, mx, y2 - ctrl_offset, x2, y2)
+                }
+            }
+            "orthogonal" => {
+                let mx = (x1 + x2) / 2.0;
+                format!("M{},{} L{},{} L{},{} L{},{}", x1, y1, mx, y1, mx, y2, x2, y2)
+            }
+            _ => format!("M{},{} L{},{}", x1, y1, x2, y2), // straight
+        };
+        
+        let markers = match self.arrow.as_str() {
+            "forward" => format!(r#" marker-end="url(#{})""#, marker_ids.1),
+            "backward" => format!(r#" marker-start="url(#{})""#, marker_ids.0),
+            "both" => format!(r#" marker-start="url(#{})" marker-end="url(#{})""#, marker_ids.0, marker_ids.1),
+            _ => String::new(),
+        };
+        
+        let label_svg = self.label.as_ref().map_or(String::new(), |lbl| {
+            let mx = (x1 + x2) / 2.0;
+            let my = (y1 + y2) / 2.0;
+            format!(r##"<text x="{}" y="{}" text-anchor="middle" dominant-baseline="middle" font-size="12" fill="#666">{}</text>"##, mx, my - 8.0, html_escape(lbl))
+        });
+        
+        format!(r#"<path d="{}" fill="none" stroke="{}" stroke-width="{}"{}/>{}"#, 
+            path_d, stroke, self.style.stroke_width, markers, label_svg)
+    }
+    
+    pub fn bounds(&self) -> (f32, f32, f32, f32) {
+        let (x1, y1) = self.from_pt;
+        let (x2, y2) = self.to_pt;
+        (x1.min(x2), y1.min(y2), (x1 - x2).abs(), (y1 - y2).abs())
+    }
+}
+
+/// Generate SVG defs for arrow markers
+pub fn arrow_marker_defs(id_prefix: &str, color: &str) -> String {
+    format!(
+        r#"<marker id="{id_prefix}-arrow-start" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto-start-reverse"><polygon points="10 0, 10 7, 0 3.5" fill="{color}"/></marker><marker id="{id_prefix}-arrow-end" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="{color}"/></marker>"#,
+        id_prefix = id_prefix, color = color
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

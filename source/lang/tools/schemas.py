@@ -3,7 +3,7 @@
 DSL_REFERENCE = """Iconoglott DSL Syntax Reference:
 
 CANVAS:
-  canvas 800x600 fill #1a1a2e
+  canvas giant fill #1a1a2e
 
 VARIABLES:
   $accent = #e94560

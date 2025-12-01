@@ -22,7 +22,7 @@ pip install iconoglott[langchain]
 from iconoglott import render
 
 svg = render('''
-    canvas 400x300 fill #1a1a2e
+    canvas massive fill #1a1a2e
     
     circle at 200,150 radius 50
       fill #e94560
@@ -80,7 +80,7 @@ if response.choices[0].message.tool_calls:
 ### Canvas
 
 ```
-canvas 800x600 fill #1a1a2e
+canvas giant fill #1a1a2e
 ```
 
 ### Shapes

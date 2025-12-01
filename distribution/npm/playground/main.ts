@@ -19,7 +19,7 @@ const PROPERTIES = new Set([
 const DEFAULT_CODE = `// Iconoglott Visual DSL
 // Try the shapes and styles below!
 
-canvas 800x600 fill #0d1117
+canvas giant fill #0d1117
 
 // Variables for reusable colors
 $accent = #f97316

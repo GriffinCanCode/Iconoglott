@@ -37,8 +37,12 @@ fn compute_id(el: &Element, order: u64, kind: ElementKind) -> ElementId {
         Element::Path(p) => h.write_str(&p.d),
         Element::Polygon(p) => for (x, y) in &p.points { h.write_f32(*x); h.write_f32(*y); },
         Element::Text(t) => { h.write_f32(t.x); h.write_f32(t.y); h.write_str(&t.content); }
-        Element::Image(i) => { h.write_str(&i.href); }
+        Element::Image(i) => h.write_str(&i.href),
+        Element::Diamond(d) => { h.write_f32(d.cx); h.write_f32(d.cy); }
+        Element::Node(n) => { h.write_str(&n.id); h.write_f32(n.cx); h.write_f32(n.cy); }
+        Element::Edge(e) => { h.write_str(&e.from_id); h.write_str(&e.to_id); }
         Element::Group(_, tf) => if let Some(t) = tf { h.write_str(t); },
+        Element::Graph(g) => { h.write_str(&g.layout); h.write_str(&g.direction); }
     }
     
     ElementId::with_key(order, kind.as_u8(), &h.finish().to_le_bytes())
@@ -56,7 +60,11 @@ pub fn element_kind(el: &Element) -> ElementKind {
         Element::Polygon(_) => ElementKind::Polygon,
         Element::Text(_) => ElementKind::Text,
         Element::Image(_) => ElementKind::Image,
+        Element::Diamond(_) => ElementKind::Diamond,
+        Element::Node(_) => ElementKind::Node,
+        Element::Edge(_) => ElementKind::Edge,
         Element::Group(_, _) => ElementKind::Group,
+        Element::Graph(_) => ElementKind::Graph,
     }
 }
 

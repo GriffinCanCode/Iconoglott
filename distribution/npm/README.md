@@ -20,7 +20,7 @@ import { IconoglottCanvas } from '@iconoglott/renderer/react'
 
 function Editor() {
   const [code, setCode] = useState(`
-    canvas 400x300 fill #1a1a2e
+    canvas massive fill #1a1a2e
     circle at 200,150 radius 50
       fill #e94560
   `)
@@ -55,7 +55,7 @@ function MyComponent() {
 
   return (
     <div>
-      <button onClick={() => render('canvas 400x300 fill #1a1a2e')}>
+      <button onClick={() => render('canvas massive fill #1a1a2e')}>
         Render
       </button>
       <span>{connected ? 'Connected' : 'Disconnected'}</span>
@@ -122,7 +122,7 @@ Or use the render function directly:
 import { render } from '@iconoglott/renderer'
 
 const svg = render(`
-  canvas 400x300 fill #1a1a2e
+  canvas massive fill #1a1a2e
   circle at 200,150 radius 50
     fill #e94560
 `)
@@ -216,7 +216,7 @@ Parse DSL and return scene state for manipulation.
 ### Canvas
 
 ```
-canvas 800x600 fill #1a1a2e
+canvas giant fill #1a1a2e
 ```
 
 ### Shapes

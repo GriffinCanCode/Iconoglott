@@ -3,7 +3,7 @@
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
-use super::shape::{Circle, Ellipse, Image, Line, Path, Polygon, Rect, Text};
+use super::shape::{Circle, Diamond, Edge, Ellipse, Image, Line, Node, Path, Polygon, Rect, Text};
 use crate::CanvasSize;
 
 /// A renderable element in the scene
@@ -11,7 +11,120 @@ use crate::CanvasSize;
 pub enum Element {
     Rect(Rect), Circle(Circle), Ellipse(Ellipse), Line(Line),
     Path(Path), Polygon(Polygon), Text(Text), Image(Image),
+    Diamond(Diamond), Node(Node), Edge(Edge),
     Group(Vec<Element>, Option<String>),
+    Graph(GraphContainer),
+}
+
+/// Container for graph elements with layout info
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GraphContainer {
+    pub layout: String,
+    pub direction: String,
+    pub spacing: f32,
+    pub nodes: Vec<Node>,
+    pub edges: Vec<Edge>,
+}
+
+impl Default for GraphContainer {
+    fn default() -> Self {
+        Self { layout: "manual".into(), direction: "vertical".into(), spacing: 50.0, nodes: Vec::new(), edges: Vec::new() }
+    }
+}
+
+impl GraphContainer {
+    /// Compute edge endpoints based on node positions
+    pub fn resolve_edges(&mut self) {
+        use std::collections::HashMap;
+        let node_map: HashMap<&str, &Node> = self.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+        
+        for edge in &mut self.edges {
+            if let (Some(from_node), Some(to_node)) = (node_map.get(edge.from_id.as_str()), node_map.get(edge.to_id.as_str())) {
+                // Determine best anchor points based on relative positions
+                let (from_side, to_side) = Self::best_anchors(from_node, to_node);
+                edge.from_pt = from_node.anchor(from_side);
+                edge.to_pt = to_node.anchor(to_side);
+            }
+        }
+    }
+    
+    fn best_anchors(from: &Node, to: &Node) -> (&'static str, &'static str) {
+        let dx = to.cx - from.cx;
+        let dy = to.cy - from.cy;
+        if dy.abs() > dx.abs() {
+            if dy > 0.0 { ("bottom", "top") } else { ("top", "bottom") }
+        } else {
+            if dx > 0.0 { ("right", "left") } else { ("left", "right") }
+        }
+    }
+    
+    /// Apply auto-layout to nodes
+    pub fn apply_layout(&mut self) {
+        match self.layout.as_str() {
+            "hierarchical" => self.layout_hierarchical(),
+            "grid" => self.layout_grid(),
+            _ => {} // manual - no changes
+        }
+    }
+    
+    fn layout_hierarchical(&mut self) {
+        if self.nodes.is_empty() { return; }
+        let is_vertical = self.direction != "horizontal";
+        let spacing = self.spacing;
+        
+        // Simple hierarchical: place nodes in sequence
+        let mut pos = spacing;
+        for node in &mut self.nodes {
+            if is_vertical {
+                node.cy = pos;
+                node.cx = spacing * 2.0;
+                pos += node.h + spacing;
+            } else {
+                node.cx = pos;
+                node.cy = spacing * 2.0;
+                pos += node.w + spacing;
+            }
+        }
+    }
+    
+    fn layout_grid(&mut self) {
+        if self.nodes.is_empty() { return; }
+        let cols = (self.nodes.len() as f32).sqrt().ceil() as usize;
+        let spacing = self.spacing;
+        
+        for (i, node) in self.nodes.iter_mut().enumerate() {
+            let row = i / cols;
+            let col = i % cols;
+            node.cx = spacing + (col as f32) * (node.w + spacing) + node.w / 2.0;
+            node.cy = spacing + (row as f32) * (node.h + spacing) + node.h / 2.0;
+        }
+    }
+    
+    pub fn to_svg(&self, arrow_prefix: &str) -> String {
+        let mut svg = String::new();
+        
+        // Render edges first (behind nodes)
+        for edge in &self.edges {
+            svg.push_str(&edge.to_svg((&format!("{}-arrow-start", arrow_prefix), &format!("{}-arrow-end", arrow_prefix))));
+        }
+        
+        // Render nodes
+        for node in &self.nodes {
+            svg.push_str(&node.to_svg());
+        }
+        
+        format!("<g class=\"graph\">{}</g>", svg)
+    }
+    
+    pub fn bounds(&self) -> (f32, f32, f32, f32) {
+        if self.nodes.is_empty() { return (0.0, 0.0, 0.0, 0.0); }
+        let (mut min_x, mut min_y, mut max_x, mut max_y) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+        for n in &self.nodes {
+            let (x, y, w, h) = n.bounds();
+            min_x = min_x.min(x); min_y = min_y.min(y); max_x = max_x.max(x + w); max_y = max_y.max(y + h);
+        }
+        (min_x, min_y, max_x - min_x, max_y - min_y)
+    }
 }
 
 impl Element {
@@ -21,10 +134,13 @@ impl Element {
             Element::Ellipse(e) => e.to_svg(), Element::Line(l) => l.to_svg(),
             Element::Path(p) => p.to_svg(), Element::Polygon(p) => p.to_svg(),
             Element::Text(t) => t.to_svg(), Element::Image(i) => i.to_svg(),
+            Element::Diamond(d) => d.to_svg(), Element::Node(n) => n.to_svg(),
+            Element::Edge(e) => e.to_svg(("arrow-start", "arrow-end")),
             Element::Group(children, tf) => {
                 let inner: String = children.iter().map(|e| e.to_svg()).collect();
                 tf.as_ref().map_or_else(|| format!("<g>{}</g>", inner), |t| format!(r#"<g transform="{}">{}</g>"#, t, inner))
             }
+            Element::Graph(g) => g.to_svg("graph"),
         }
     }
     pub fn bounds(&self) -> (f32, f32, f32, f32) {
@@ -33,6 +149,8 @@ impl Element {
             Element::Ellipse(e) => e.bounds(), Element::Line(l) => l.bounds(),
             Element::Path(p) => p.bounds(), Element::Polygon(p) => p.bounds(),
             Element::Text(t) => t.bounds(), Element::Image(i) => i.bounds(),
+            Element::Diamond(d) => d.bounds(), Element::Node(n) => n.bounds(),
+            Element::Edge(e) => e.bounds(), Element::Graph(g) => g.bounds(),
             Element::Group(children, _) => {
                 if children.is_empty() { return (0.0, 0.0, 0.0, 0.0); }
                 let (mut min_x, mut min_y, mut max_x, mut max_y) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
@@ -160,10 +278,18 @@ impl Scene {
         let (w, h) = self.dimensions();
         let mut svg = format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}">"#, w, h);
         svg.push_str(&format!(r#"<rect width="100%" height="100%" fill="{}"/>"#, self.background));
-        if !self.gradients.is_empty() || !self.filters.is_empty() {
+        
+        // Check if we need arrow markers (for edges/graphs)
+        let needs_markers = self.elements.iter().any(|e| matches!(e, Element::Edge(_) | Element::Graph(_)));
+        
+        if !self.gradients.is_empty() || !self.filters.is_empty() || needs_markers {
             svg.push_str("<defs>");
             for g in &self.gradients { svg.push_str(&g.to_svg()); }
             for f in &self.filters { svg.push_str(&f.to_svg()); }
+            if needs_markers {
+                svg.push_str(&super::shape::arrow_marker_defs("arrow", "#333"));
+                svg.push_str(&super::shape::arrow_marker_defs("graph", "#333"));
+            }
             svg.push_str("</defs>");
         }
         for el in &self.elements { svg.push_str(&el.to_svg()); }

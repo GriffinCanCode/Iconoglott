@@ -13,17 +13,19 @@ class TestInterpreterBasics:
 
     def test_empty_source(self):
         state = Interpreter().eval("")
-        assert state.canvas.width == 800
-        assert state.canvas.height == 600
+        assert state.canvas.size == "medium"
+        assert state.canvas.width == 64
+        assert state.canvas.height == 64
 
     def test_canvas_only(self):
-        state = Interpreter().eval("canvas 400x300 fill #1a1a2e")
-        assert state.canvas.width == 400
-        assert state.canvas.height == 300
+        state = Interpreter().eval("canvas massive fill #1a1a2e")
+        assert state.canvas.size == "massive"
+        assert state.canvas.width == 256
+        assert state.canvas.height == 256
         assert state.canvas.fill == "#1a1a2e"
 
     def test_single_rect(self):
-        source = """canvas 400x300
+        source = """canvas massive
 rect at 10,10 size 100x50
   fill #f00"""
         state = Interpreter().eval(source)
@@ -194,23 +196,23 @@ class TestInterpreterSVGOutput:
     """SVG output tests."""
 
     def test_svg_contains_xmlns(self):
-        state = Interpreter().eval("canvas 100x100")
+        state = Interpreter().eval("canvas large")
         svg = state.to_svg()
         assert 'xmlns="http://www.w3.org/2000/svg"' in svg
 
     def test_svg_contains_dimensions(self):
-        state = Interpreter().eval("canvas 400x300")
+        state = Interpreter().eval("canvas massive")
         svg = state.to_svg()
-        assert 'width="400"' in svg
-        assert 'height="300"' in svg
+        assert 'width="256"' in svg
+        assert 'height="256"' in svg
 
     def test_svg_contains_background(self):
-        state = Interpreter().eval("canvas 100x100 fill #1a1a2e")
+        state = Interpreter().eval("canvas large fill #1a1a2e")
         svg = state.to_svg()
         assert 'fill="#1a1a2e"' in svg
 
     def test_svg_contains_rect(self):
-        source = """canvas 100x100
+        source = """canvas large
 rect at 10,10 size 50x30
   fill #f00"""
         state = Interpreter().eval(source)
@@ -220,7 +222,7 @@ rect at 10,10 size 50x30
         assert 'fill="#f00"' in svg
 
     def test_svg_contains_circle(self):
-        source = """canvas 100x100
+        source = """canvas large
 circle at 50,50 radius 20
   fill #0f0"""
         state = Interpreter().eval(source)
@@ -229,7 +231,7 @@ circle at 50,50 radius 20
         assert 'r="20"' in svg
 
     def test_svg_gradient_defs(self):
-        source = """canvas 100x100
+        source = """canvas large
 rect at 0,0 size 100x100
   gradient linear #f00 #00f"""
         state = Interpreter().eval(source)
@@ -321,12 +323,12 @@ class TestInterpreterSnapshots:
             snapshot_file.write_text(svg)
 
     def test_snapshot_empty_canvas(self, snapshot_dir):
-        state = Interpreter().eval("canvas 100x100 fill #fff")
+        state = Interpreter().eval("canvas large fill #fff")
         svg = state.to_svg()
         self._compare_or_write_snapshot(snapshot_dir, "empty_canvas", svg)
 
     def test_snapshot_basic_rect(self, snapshot_dir):
-        source = """canvas 200x200 fill #fff
+        source = """canvas huge fill #fff
 rect at 25,25 size 150x150
   fill #e94560
   corner 10"""
@@ -335,7 +337,7 @@ rect at 25,25 size 150x150
         self._compare_or_write_snapshot(snapshot_dir, "basic_rect", svg)
 
     def test_snapshot_basic_circle(self, snapshot_dir):
-        source = """canvas 200x200 fill #1a1a2e
+        source = """canvas huge fill #1a1a2e
 circle at 100,100 radius 50
   fill #e94560
   stroke #fff 2"""
@@ -344,7 +346,7 @@ circle at 100,100 radius 50
         self._compare_or_write_snapshot(snapshot_dir, "basic_circle", svg)
 
     def test_snapshot_gradient(self, snapshot_dir):
-        source = """canvas 200x200 fill #fff
+        source = """canvas huge fill #fff
 rect at 25,25 size 150x150
   gradient linear #e94560 #16213e"""
         state = Interpreter().eval(source)
@@ -352,7 +354,7 @@ rect at 25,25 size 150x150
         self._compare_or_write_snapshot(snapshot_dir, "gradient", svg)
 
     def test_snapshot_multiple_shapes(self, snapshot_dir):
-        source = """canvas 300x200 fill #1a1a2e
+        source = """canvas massive fill #1a1a2e
 rect at 20,20 size 80x60
   fill #e94560
 circle at 200,50 radius 30
